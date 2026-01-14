@@ -1,0 +1,194 @@
+import { v } from "convex/values";
+import { internal } from "./_generated/api";
+import { action, internalQuery, mutation } from "./_generated/server";
+export const createCheckoutSession = action({
+  args: {
+    userId: v.id("users"),
+    credits: v.number(),
+    currency: v.optional(v.string()),
+    billingAddress: v.optional(
+      v.object({
+        street: v.optional(v.string()),
+        city: v.optional(v.string()),
+        state: v.optional(v.string()),
+        postalCode: v.optional(v.string()),
+        country: v.optional(v.string()),
+      }),
+    ),
+    paymentMethods: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) => {
+    const apiKey = process.env.DODO_PAYMENTS_API_KEY;
+    const productId = process.env.DODO_PAYMENTS_PRODUCT_ID;
+    const returnUrl = process.env.DODO_PAYMENTS_RETURN_URL;
+    if (!(apiKey && productId && returnUrl)) {
+      throw new Error(
+        "Dodo Payments env is not configured. Please set DODO_PAYMENTS_API_KEY, DODO_PAYMENTS_PRODUCT_ID, DODO_PAYMENTS_RETURN_URL",
+      );
+    }
+    if (!Number.isFinite(args.credits) || args.credits <= 0) {
+      throw new Error("credits must be a positive number");
+    }
+    const user = await ctx.runQuery((internal as any).payments.getUser, {
+      userId: args.userId,
+    });
+    if (!user) {
+      throw new Error("User not found");
+    }
+    const { email: userEmail = "", name: userName = "", _id: userId } = user;
+    const amountInCents = Math.round((args.credits / 10) * 100);
+    const environment = process.env.DODO_PAYMENTS_ENVIRONMENT || "test_mode";
+    const baseUrl =
+      environment === "live_mode"
+        ? "https://live.dodopayments.com"
+        : "https://test.dodopayments.com";
+    const billingCurrency = args.currency || "USD";
+    const paymentMethods = args.paymentMethods || ["credit", "debit"];
+    const billing_address = args.billingAddress
+      ? {
+          street: args.billingAddress.street,
+          city: args.billingAddress.city,
+          state: args.billingAddress.state,
+          zipcode: args.billingAddress.postalCode,
+          country: args.billingAddress.country,
+        }
+      : undefined;
+    const idempotencyKey = (
+      globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`
+    ).toString();
+    const maxRetries = 2;
+    const timeoutMs = 15_000;
+    async function postWithRetry(): Promise<Response> {
+      let lastErr: unknown;
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          const res = await fetch(`${baseUrl}/checkouts`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${apiKey}`,
+              "Idempotency-Key": idempotencyKey,
+            },
+            signal: controller.signal,
+            body: JSON.stringify({
+              product_cart: [
+                {
+                  product_id: productId,
+                  quantity: 1,
+                  amount: amountInCents,
+                },
+              ],
+              customer: {
+                email: userEmail,
+                name: userName,
+              },
+              allowed_payment_method_types: paymentMethods,
+              return_url: returnUrl,
+              billing_currency: billingCurrency,
+              ...(billing_address ? { billing_address } : {}),
+              metadata: {
+                user_id: String(userId),
+                credits: String(args.credits),
+                source: "phage_web",
+              },
+            }),
+          });
+          clearTimeout(timer);
+          if (res.status >= 500 && res.status < 600 && attempt < maxRetries) {
+            const jitter = 200 * (attempt + 1) + Math.floor(Math.random() * 200);
+            await new Promise((r) => setTimeout(r, jitter));
+            continue;
+          }
+          return res;
+        } catch (e) {
+          clearTimeout(timer);
+          lastErr = e;
+          if (attempt < maxRetries) {
+            const jitter = 250 * (attempt + 1) + Math.floor(Math.random() * 250);
+            await new Promise((r) => setTimeout(r, jitter));
+            continue;
+          }
+          throw e;
+        }
+      }
+      throw lastErr instanceof Error ? lastErr : new Error("Unknown network error");
+    }
+    const response = await postWithRetry();
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      throw new Error(`Dodo API error: ${response.status} - ${errorText || "Unknown error"}`);
+    }
+    const session = await response.json();
+    return {
+      checkout_url: (session as any).checkout_url,
+      session_id: (session as any).session_id,
+    };
+  },
+});
+export const logPaymentEvent = mutation({
+  args: {
+    eventId: v.string(),
+    type: v.string(),
+    paymentId: v.optional(v.string()),
+    userId: v.optional(v.id("users")),
+    credits: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    if (!args.userId) {
+      throw new Error("userId is required for payment events");
+    }
+    await ctx.db.insert("transactions", {
+      userId: args.userId,
+      amount: 0,
+      credits: args.credits || 0,
+      status: args.type,
+      createdAt: Date.now(),
+    });
+  },
+});
+export const applyCreditsToUser = mutation({
+  args: {
+    userId: v.id("users"),
+    credits: v.number(),
+  },
+  handler: async (ctx, args) => {
+    if (args.credits <= 0) {
+      return;
+    }
+    const user = await ctx.db.get(args.userId);
+    if (!user) {
+      return;
+    }
+    await ctx.db.patch(args.userId, { credits: (user.credits ?? 0) + args.credits });
+  },
+});
+export const storePaymentTransaction = mutation({
+  args: {
+    userId: v.id("users"),
+    paymentId: v.string(),
+    credits: v.number(),
+    amountInCents: v.number(),
+    status: v.string(),
+    paymentMethod: v.optional(v.string()),
+    transactionId: v.optional(v.string()),
+    metadata: v.optional(v.any()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.insert("transactions", {
+      userId: args.userId,
+      amount: args.amountInCents / 100, // Convert from cents to dollars
+      credits: args.credits,
+      status: args.status,
+      createdAt: Date.now(),
+    });
+  },
+});
+export const getUser = internalQuery({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.userId);
+  },
+});
+export const createCheckout = createCheckoutSession;
