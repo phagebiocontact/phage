@@ -43,6 +43,7 @@ const SimulateContentInner = ({
 	});
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const createSimulation = useMutation(api.simulations.createSimulation);
+	const generateUploadUrl = useMutation(api.simulations.generateUploadUrl);
 	const creditsNeeded = parameters.simulationTime;
 	const _estimatedCost = (creditsNeeded / 20).toFixed(2);
 
@@ -102,7 +103,35 @@ const SimulateContentInner = ({
 		}
 		setIsSubmitting(true);
 		try {
-			await createSimulation({
+			// Upload protein file to Convex storage
+			const uploadUrl = await generateUploadUrl();
+			const result = await fetch(uploadUrl, {
+				method: "POST",
+				body: proteinFile,
+			});
+
+			if (!result.ok) {
+				throw new Error(`Protein upload failed: ${result.statusText}`);
+			}
+			const { storageId: proteinStorageId } = await result.json();
+
+			// Upload ligand file if present
+			let ligandStorageId;
+			if (ligandFile) {
+				const ligandUploadUrl = await generateUploadUrl();
+				const ligandResult = await fetch(ligandUploadUrl, {
+					method: "POST",
+					body: ligandFile,
+				});
+				if (!ligandResult.ok) {
+					throw new Error(`Ligand upload failed: ${ligandResult.statusText}`);
+				}
+				const { storageId } = await ligandResult.json();
+				ligandStorageId = storageId;
+			}
+
+			// Create simulation with storage IDs
+			const simulationId = await createSimulation({
 				name: parameters.title,
 				parameters: {
 					temperature: parameters.temperature,
@@ -121,13 +150,14 @@ const SimulateContentInner = ({
 					: {
 							enabled: false,
 						},
-				pdbFile: proteinFile.name,
-				sdfFile: ligandFile?.name,
+				proteinStorageId,
+				ligandStorageId,
 				creditsUsed: creditsNeeded,
 			});
+
 			updateCredits(-creditsNeeded);
 			toast.success("Simulation started successfully!");
-			navigate({ to: "/jobs" });
+			navigate({ to: `/results/${simulationId}` });
 		} catch (error) {
 			console.error("Error creating simulation:", error);
 			toast.error("Failed to start simulation. Please try again.");

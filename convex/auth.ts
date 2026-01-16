@@ -4,7 +4,7 @@ import { query } from "./_generated/server";
 import { authTables } from "@convex-dev/auth/server";
 import { DataModel } from "./_generated/dataModel";
 
-export const { auth,    } = convexAuth({
+export const { auth, signIn, signOut, store } = convexAuth({
   providers: [Password],
 });
 

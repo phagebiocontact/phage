@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import { format } from "date-fns";
 import { AlertCircle, CheckCircle2, Clock, Terminal } from "lucide-react";
@@ -30,6 +30,7 @@ export const Route = createFileRoute("/jobs")({
 });
 
 const JobsContentInner = ({ user }: { user: any }) => {
+	const navigate = useNavigate();
 	const jobs = useQuery(api.simulations.getUserSimulations, user ? {} : "skip");
 	const getStatusColor = (status: string) => {
 		switch (status) {
@@ -90,7 +91,7 @@ const JobsContentInner = ({ user }: { user: any }) => {
 							You haven't run any simulations yet. Start your first job to see
 							it here.
 						</p>
-						<Button onClick={() => (window.location.href = "/simulate")}>
+						<Button onClick={() => navigate({ to: "/simulate" })}>
 							Start Simulation
 						</Button>
 					</div>
@@ -113,7 +114,11 @@ const JobsContentInner = ({ user }: { user: any }) => {
 							</TableHeader>
 							<TableBody>
 								{jobs.map((job: any) => (
-									<TableRow key={job._id}>
+									<TableRow 
+										key={job._id}
+										className="cursor-pointer hover:bg-muted/50"
+										onClick={() => navigate({ to: `/results/${job._id}` })}
+									>
 										<TableCell className="font-medium">
 											<div>
 												{job.name}
@@ -152,21 +157,19 @@ const JobsContentInner = ({ user }: { user: any }) => {
 											{format(new Date(job.createdAt), "MMM d, HH:mm")}
 										</TableCell>
 										<TableCell className="text-right">
-											<Button size="sm" variant="ghost" className="h-8 w-8 p-0">
-												<span className="sr-only">Open menu</span>
-											</Button>
-											{job.status === "completed" && (
+											<div className="flex justify-end gap-2">
 												<Button
-													className="h-8"
 													size="sm"
 													variant="outline"
-													onClick={() => {
-														toast.info("Download started");
+													className="h-8"
+													onClick={(e) => {
+														e.stopPropagation();
+														navigate({ to: `/results/${job._id}` });
 													}}
 												>
-													Result
+													View
 												</Button>
-											)}
+											</div>
 										</TableCell>
 									</TableRow>
 								))}
@@ -181,6 +184,7 @@ const JobsContentInner = ({ user }: { user: any }) => {
 
 function Jobs() {
 	const { user } = useAuth();
+	const navigate = useNavigate();
 	return (
 		<div className="min-h-screen bg-background">
 			<section className="pt-32 pb-12">
@@ -195,7 +199,7 @@ function Jobs() {
 							</p>
 						</div>
 						<Button
-							onClick={() => (window.location.href = "/simulate")}
+							onClick={() => navigate({ to: "/simulate" })}
 							className="hidden bg-gradient-primary shadow-glow md:flex"
 						>
 							New Simulation
