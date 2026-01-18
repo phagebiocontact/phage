@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SuccessRouteImport } from './routes/success'
 import { Route as SimulateRouteImport } from './routes/simulate'
 import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as JobsRouteImport } from './routes/jobs'
@@ -18,6 +19,11 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ResultsIdRouteImport } from './routes/results.$id'
 
+const SuccessRoute = SuccessRouteImport.update({
+  id: '/success',
+  path: '/success',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SimulateRoute = SimulateRouteImport.update({
   id: '/simulate',
   path: '/simulate',
@@ -67,6 +73,7 @@ export interface FileRoutesByFullPath {
   '/jobs': typeof JobsRoute
   '/pricing': typeof PricingRoute
   '/simulate': typeof SimulateRoute
+  '/success': typeof SuccessRoute
   '/results/$id': typeof ResultsIdRoute
 }
 export interface FileRoutesByTo {
@@ -77,6 +84,7 @@ export interface FileRoutesByTo {
   '/jobs': typeof JobsRoute
   '/pricing': typeof PricingRoute
   '/simulate': typeof SimulateRoute
+  '/success': typeof SuccessRoute
   '/results/$id': typeof ResultsIdRoute
 }
 export interface FileRoutesById {
@@ -88,6 +96,7 @@ export interface FileRoutesById {
   '/jobs': typeof JobsRoute
   '/pricing': typeof PricingRoute
   '/simulate': typeof SimulateRoute
+  '/success': typeof SuccessRoute
   '/results/$id': typeof ResultsIdRoute
 }
 export interface FileRouteTypes {
@@ -100,6 +109,7 @@ export interface FileRouteTypes {
     | '/jobs'
     | '/pricing'
     | '/simulate'
+    | '/success'
     | '/results/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -110,6 +120,7 @@ export interface FileRouteTypes {
     | '/jobs'
     | '/pricing'
     | '/simulate'
+    | '/success'
     | '/results/$id'
   id:
     | '__root__'
@@ -120,6 +131,7 @@ export interface FileRouteTypes {
     | '/jobs'
     | '/pricing'
     | '/simulate'
+    | '/success'
     | '/results/$id'
   fileRoutesById: FileRoutesById
 }
@@ -131,11 +143,19 @@ export interface RootRouteChildren {
   JobsRoute: typeof JobsRoute
   PricingRoute: typeof PricingRoute
   SimulateRoute: typeof SimulateRoute
+  SuccessRoute: typeof SuccessRoute
   ResultsIdRoute: typeof ResultsIdRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/success': {
+      id: '/success'
+      path: '/success'
+      fullPath: '/success'
+      preLoaderRoute: typeof SuccessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/simulate': {
       id: '/simulate'
       path: '/simulate'
@@ -203,6 +223,7 @@ const rootRouteChildren: RootRouteChildren = {
   JobsRoute: JobsRoute,
   PricingRoute: PricingRoute,
   SimulateRoute: SimulateRoute,
+  SuccessRoute: SuccessRoute,
   ResultsIdRoute: ResultsIdRoute,
 }
 export const routeTree = rootRouteImport

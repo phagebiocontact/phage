@@ -46,12 +46,12 @@ export const createCheckoutSession = action({
     const paymentMethods = args.paymentMethods || ["credit", "debit"];
     const billing_address = args.billingAddress
       ? {
-          street: args.billingAddress.street,
-          city: args.billingAddress.city,
-          state: args.billingAddress.state,
-          zipcode: args.billingAddress.postalCode,
-          country: args.billingAddress.country,
-        }
+        street: args.billingAddress.street,
+        city: args.billingAddress.city,
+        state: args.billingAddress.state,
+        zipcode: args.billingAddress.postalCode,
+        country: args.billingAddress.country,
+      }
       : undefined;
     const idempotencyKey = (
       globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`
@@ -85,7 +85,7 @@ export const createCheckoutSession = action({
                 name: userName,
               },
               allowed_payment_method_types: paymentMethods,
-              return_url: returnUrl,
+              return_url: returnUrl!,
               billing_currency: billingCurrency,
               ...(billing_address ? { billing_address } : {}),
               metadata: {
@@ -118,9 +118,11 @@ export const createCheckoutSession = action({
     const response = await postWithRetry();
     if (!response.ok) {
       const errorText = await response.text().catch(() => "");
+      console.error(`Dodo API error: ${response.status} - ${errorText}`);
       throw new Error(`Dodo API error: ${response.status} - ${errorText || "Unknown error"}`);
     }
     const session = await response.json();
+    console.log("Dodo Checkout Session Created:", (session as any).session_id);
     return {
       checkout_url: (session as any).checkout_url,
       session_id: (session as any).session_id,
@@ -137,7 +139,8 @@ export const logPaymentEvent = mutation({
   },
   handler: async (ctx, args) => {
     if (!args.userId) {
-      throw new Error("userId is required for payment events");
+      console.error("userId is required for payment events");
+      return;
     }
     await ctx.db.insert("transactions", {
       userId: args.userId,
@@ -154,14 +157,19 @@ export const applyCreditsToUser = mutation({
     credits: v.number(),
   },
   handler: async (ctx, args) => {
+    console.log(`Applying ${args.credits} credits to user ${args.userId}`);
     if (args.credits <= 0) {
       return;
     }
     const user = await ctx.db.get(args.userId);
     if (!user) {
+      console.error(`User ${args.userId} not found for applying credits`);
       return;
     }
-    await ctx.db.patch(args.userId, { credits: (user.credits ?? 0) + args.credits });
+    const currentCredits = user.credits ?? 0;
+    const newCredits = currentCredits + args.credits;
+    await ctx.db.patch(args.userId, { credits: newCredits });
+    console.log(`Updated user ${args.userId} credits from ${currentCredits} to ${newCredits}`);
   },
 });
 export const storePaymentTransaction = mutation({
@@ -176,6 +184,7 @@ export const storePaymentTransaction = mutation({
     metadata: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
+    console.log(`Storing payment transaction for user ${args.userId}, amount: ${args.amountInCents / 100}`);
     await ctx.db.insert("transactions", {
       userId: args.userId,
       amount: args.amountInCents / 100, // Convert from cents to dollars

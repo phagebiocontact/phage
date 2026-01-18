@@ -1,11 +1,10 @@
 import { ConvexQueryClient } from "@convex-dev/react-query";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ConvexProvider } from "convex/react";
+import { QueryClient } from "@tanstack/react-query";
 
 export function getContext() {
 	const convexUrl = import.meta.env.VITE_CONVEX_URL!;
 	const convexQueryClient = new ConvexQueryClient(convexUrl, {
-		expectAuth: true,
+		expectAuth: false,
 	});
 
 	const queryClient: QueryClient = new QueryClient({
@@ -25,18 +24,4 @@ export function getContext() {
 	};
 }
 
-function _Provider({
-	children,
-	queryClient,
-	convexQueryClient,
-}: {
-	children: React.ReactNode;
-	queryClient: QueryClient;
-	convexQueryClient: ConvexQueryClient;
-}) {
-	return (
-		<ConvexProvider client={convexQueryClient.convexClient}>
-			<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-		</ConvexProvider>
-	);
-}
+

@@ -17,11 +17,20 @@ import { convex } from "@/lib/convex";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 
+import { z } from "zod";
+
+const pricingSearchSchema = z.object({
+	status: z.string().optional(),
+	session_id: z.string().optional(),
+});
+
 export const Route = createFileRoute("/pricing")({
+	validateSearch: (search) => pricingSearchSchema.parse(search),
 	component: Pricing,
 });
 
 const PricingContentInner = ({ user }: { user: any }) => {
+	const search = Route.useSearch();
 	const [isLoading, setIsLoading] = useState(false);
 	const [isVisible, setIsVisible] = useState(false);
 	const createCheckout = useAction(api.payments.createCheckout);
@@ -29,7 +38,17 @@ const PricingContentInner = ({ user }: { user: any }) => {
 
 	useEffect(() => {
 		setIsVisible(true);
-	}, []);
+
+		if (search.status === "succeeded" || search.status === "success") {
+			toast.success("Payment successful!", {
+				description: "Your credits have been updated.",
+			});
+		} else if (search.status === "failed" || search.status === "cancel") {
+			toast.error("Payment failed", {
+				description: "Please try again or contact support if the issue persists.",
+			});
+		}
+	}, [search.status]);
 
 	const creditOptions = [
 		{
@@ -249,11 +268,10 @@ const PricingContentInner = ({ user }: { user: any }) => {
 									<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 										{creditOptions.map((option) => (
 											<Card
-												className={`relative cursor-pointer transition-all duration-300 hover:scale-105 ${
-													selectedCredits === option.credits
-														? "border-primary bg-primary/10 shadow-glow-sm"
-														: "border-border/40 bg-background hover:border-primary/30"
-												}`}
+												className={`relative cursor-pointer transition-all duration-300 hover:scale-105 ${selectedCredits === option.credits
+													? "border-primary bg-primary/10 shadow-glow-sm"
+													: "border-border/40 bg-background hover:border-primary/30"
+													}`}
 												key={option.credits}
 												onClick={() => setSelectedCredits(option.credits)}
 											>

@@ -5,7 +5,17 @@ import { authTables } from "@convex-dev/auth/server";
 import { DataModel } from "./_generated/dataModel";
 
 export const { auth, signIn, signOut, store } = convexAuth({
-  providers: [Password],
+  providers: [
+    Password({
+      profile(params) {
+        return {
+          email: params.email as string,
+          name: params.name as string,
+          credits: 5,
+        };
+      },
+    }),
+  ],
 });
 
 export const getCurrentUser = query({

@@ -19,6 +19,7 @@ function Auth() {
 	const [showPassword, setShowPassword] = useState(false);
 	const [isVisible, setIsVisible] = useState(false);
 	const { user, signIn, signUp, isLoading } = useAuth();
+	const [submitting, setSubmitting] = useState(false);
 	const navigate = useNavigate();
 
 	useEffect(() => {
@@ -37,6 +38,7 @@ function Auth() {
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
+		setSubmitting(true);
 		try {
 			if (isSignUp) {
 				await signUp(email, password, name);
@@ -46,6 +48,8 @@ function Auth() {
 			navigate({ to: "/" });
 		} catch (_error) {
 			// Error handled in auth context
+		} finally {
+			setSubmitting(false);
 		}
 	};
 
@@ -212,10 +216,10 @@ function Auth() {
 							</div>
 							<Button
 								className="w-full h-12 text-lg font-semibold bg-gradient-primary shadow-glow hover:shadow-glow-lg transition-all duration-300 hover:scale-[1.02]"
-								disabled={isLoading || (isSignUp && !allRequirementsMet)}
+								disabled={submitting || (isSignUp && !allRequirementsMet)}
 								type="submit"
 							>
-								{isLoading ? (
+								{submitting ? (
 									<div className="flex items-center gap-2">
 										<div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
 										Processing...
