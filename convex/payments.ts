@@ -6,6 +6,7 @@ export const createCheckoutSession = action({
     userId: v.id("users"),
     credits: v.number(),
     currency: v.optional(v.string()),
+    country: v.optional(v.string()),
     billingAddress: v.optional(
       v.object({
         street: v.optional(v.string()),
@@ -42,8 +43,38 @@ export const createCheckoutSession = action({
       environment === "live_mode"
         ? "https://live.dodopayments.com"
         : "https://test.dodopayments.com";
-    const billingCurrency = args.currency || "USD";
-    const paymentMethods = args.paymentMethods || ["credit", "debit"];
+
+    // Detect country from billing address or args
+    const detectedCountry = args.billingAddress?.country || args.country || "US";
+
+    // Adaptive currency based on country
+    let billingCurrency = args.currency || "USD";
+    if (!args.currency) {
+      // Auto-detect currency based on country
+      const currencyMap: Record<string, string> = {
+        IN: "INR",
+        GB: "GBP",
+        CA: "CAD",
+        AU: "AUD",
+        EU: "EUR",
+        DE: "EUR",
+        FR: "EUR",
+        IT: "EUR",
+        ES: "EUR",
+        NL: "EUR",
+        JP: "JPY",
+        SG: "SGD",
+        AE: "AED",
+      };
+      billingCurrency = currencyMap[detectedCountry] || "USD";
+    }
+
+    // Payment methods with UPI support for India
+    let paymentMethods = args.paymentMethods || ["credit", "debit"];
+    if (!args.paymentMethods && detectedCountry === "IN") {
+      // Add UPI payment methods for Indian customers
+      paymentMethods = ["upi_collect", "upi_intent", "credit", "debit"];
+    }
     const billing_address = args.billingAddress
       ? {
         street: args.billingAddress.street,

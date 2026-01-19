@@ -1,12 +1,12 @@
 import {
-	LineChart,
+	CartesianGrid,
+	Legend,
 	Line,
+	LineChart,
+	ResponsiveContainer,
+	Tooltip,
 	XAxis,
 	YAxis,
-	CartesianGrid,
-	Tooltip,
-	Legend,
-	ResponsiveContainer,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -49,10 +49,18 @@ export function SimulationCharts({ data }: SimulationChartsProps) {
 									<CartesianGrid strokeDasharray="3 3" opacity={0.1} />
 									<XAxis
 										dataKey="time"
-										label={{ value: "Time (ns)", position: "insideBottom", offset: -5 }}
+										label={{
+											value: "Time (ns)",
+											position: "insideBottom",
+											offset: -5,
+										}}
 									/>
 									<YAxis
-										label={{ value: "RMSD (Å)", angle: -90, position: "insideLeft" }}
+										label={{
+											value: "RMSD (Å)",
+											angle: -90,
+											position: "insideLeft",
+										}}
 									/>
 									<Tooltip
 										contentStyle={{
@@ -95,10 +103,18 @@ export function SimulationCharts({ data }: SimulationChartsProps) {
 									<CartesianGrid strokeDasharray="3 3" opacity={0.1} />
 									<XAxis
 										dataKey="residue"
-										label={{ value: "Residue Index", position: "insideBottom", offset: -5 }}
+										label={{
+											value: "Residue Index",
+											position: "insideBottom",
+											offset: -5,
+										}}
 									/>
 									<YAxis
-										label={{ value: "RMSF (Å)", angle: -90, position: "insideLeft" }}
+										label={{
+											value: "RMSF (Å)",
+											angle: -90,
+											position: "insideLeft",
+										}}
 									/>
 									<Tooltip
 										contentStyle={{
@@ -141,10 +157,18 @@ export function SimulationCharts({ data }: SimulationChartsProps) {
 									<CartesianGrid strokeDasharray="3 3" opacity={0.1} />
 									<XAxis
 										dataKey="time"
-										label={{ value: "Time (ns)", position: "insideBottom", offset: -5 }}
+										label={{
+											value: "Time (ns)",
+											position: "insideBottom",
+											offset: -5,
+										}}
 									/>
 									<YAxis
-										label={{ value: "Energy (kJ/mol)", angle: -90, position: "insideLeft" }}
+										label={{
+											value: "Energy (kJ/mol)",
+											angle: -90,
+											position: "insideLeft",
+										}}
 									/>
 									<Tooltip
 										contentStyle={{
@@ -173,7 +197,9 @@ export function SimulationCharts({ data }: SimulationChartsProps) {
 							</ResponsiveContainer>
 						) : (
 							<div className="h-[400px] flex items-center justify-center bg-muted rounded-lg">
-								<p className="text-muted-foreground">No energy data available</p>
+								<p className="text-muted-foreground">
+									No energy data available
+								</p>
 							</div>
 						)}
 					</CardContent>
@@ -195,10 +221,18 @@ export function SimulationCharts({ data }: SimulationChartsProps) {
 									<CartesianGrid strokeDasharray="3 3" opacity={0.1} />
 									<XAxis
 										dataKey="time"
-										label={{ value: "Time (ns)", position: "insideBottom", offset: -5 }}
+										label={{
+											value: "Time (ns)",
+											position: "insideBottom",
+											offset: -5,
+										}}
 									/>
 									<YAxis
-										label={{ value: "Rg (Å)", angle: -90, position: "insideLeft" }}
+										label={{
+											value: "Rg (Å)",
+											angle: -90,
+											position: "insideLeft",
+										}}
 									/>
 									<Tooltip
 										contentStyle={{
@@ -243,10 +277,18 @@ export function SimulationCharts({ data }: SimulationChartsProps) {
 									<CartesianGrid strokeDasharray="3 3" opacity={0.1} />
 									<XAxis
 										dataKey="time"
-										label={{ value: "Time (ns)", position: "insideBottom", offset: -5 }}
+										label={{
+											value: "Time (ns)",
+											position: "insideBottom",
+											offset: -5,
+										}}
 									/>
 									<YAxis
-										label={{ value: "SASA (Å²)", angle: -90, position: "insideLeft" }}
+										label={{
+											value: "SASA (Å²)",
+											angle: -90,
+											position: "insideLeft",
+										}}
 									/>
 									<Tooltip
 										contentStyle={{

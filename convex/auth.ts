@@ -3,6 +3,7 @@ import { convexAuth } from "@convex-dev/auth/server";
 import { query } from "./_generated/server";
 import { authTables } from "@convex-dev/auth/server";
 import { DataModel } from "./_generated/dataModel";
+import Google from "@auth/core/providers/google";
 
 export const { auth, signIn, signOut, store } = convexAuth({
   providers: [
@@ -15,6 +16,7 @@ export const { auth, signIn, signOut, store } = convexAuth({
         };
       },
     }),
+    Google,
   ],
 });
 

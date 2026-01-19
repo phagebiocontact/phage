@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { action } from "./_generated/server";
+
 export const sendContactEmail = action({
   args: {
     name: v.string(),
@@ -8,23 +9,38 @@ export const sendContactEmail = action({
     message: v.string(),
   },
   handler: async (_ctx, args) => {
-    const resendApiKey = process.env.RESEND_API_KEY;
-    if (!resendApiKey) {
-      throw new Error("RESEND_API_KEY not configured");
+    const brevoApiKey = process.env.BREVO_API_KEY;
+    const adminEmail = process.env.ADMIN_EMAIL
+    const senderEmail = process.env.BREVO_SENDER_EMAIL
+    if (!brevoApiKey) {
+      throw new Error("BREVO_API_KEY not configured");
     }
+
     try {
-      const response = await fetch("https://api.resend.com/emails", {
+      const response = await fetch("https://api.brevo.com/v3/smtp/email", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${resendApiKey}`,
+          "api-key": brevoApiKey,
           "Content-Type": "application/json",
+          "accept": "application/json",
         },
         body: JSON.stringify({
-          from: "Phage <onboarding@resend.dev>",
-          to: ["contact@yourcompany.com"],
-          reply_to: args.email,
+          sender: {
+            name: "Phage Contact Form",
+            email: senderEmail,
+          },
+          to: [
+            {
+              email: adminEmail,
+              name: "Admin",
+            },
+          ],
+          replyTo: {
+            email: args.email,
+            name: args.name,
+          },
           subject: `[Contact Form] ${args.subject}`,
-          html: `
+          htmlContent: `
             <h2>New Contact Form Submission</h2>
             <p><strong>From:</strong> ${args.name} (${args.email})</p>
             <p><strong>Subject:</strong> ${args.subject}</p>
@@ -33,14 +49,16 @@ export const sendContactEmail = action({
           `,
         }),
       });
+
       if (!response.ok) {
         const error = await response.text();
-        console.error("Resend API error:", error);
+        console.error("Brevo API error:", error);
         throw new Error(`Failed to send email: ${error}`);
       }
+
       const data = await response.json();
       console.log("Email sent successfully:", data);
-      return { success: true, id: data.id };
+      return { success: true, messageId: data.messageId };
     } catch (error) {
       console.error("Error sending email:", error);
       throw error;

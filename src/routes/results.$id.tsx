@@ -1,19 +1,26 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useQuery, useAction, useMutation } from "convex/react";
-import { RefreshCw, Download, ChevronLeft } from "lucide-react";
-import { useState, useRef, useEffect } from "react";
+import { useAction, useMutation, useQuery } from "convex/react";
+import {
+	Activity,
+	ChevronLeft,
+	Clock,
+	Download,
+	Info,
+	RefreshCw,
+	Settings2,
+} from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import type { MolstarViewerRef } from "@/components/MolstarViewer";
+import MolstarViewer from "@/components/MolstarViewer";
+import { SimulationCharts } from "@/components/SimulationCharts";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import MolstarViewer from "@/components/MolstarViewer";
-import type { MolstarViewerRef } from "@/components/MolstarViewer";
-import { SimulationCharts } from "@/components/SimulationCharts";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import { motion, AnimatePresence } from "motion/react";
-import { Badge } from "@/components/ui/badge";
-import { Clock, Activity, Settings2, Info } from "lucide-react";
 
 export const Route = createFileRoute("/results/$id")({
 	component: Results,
@@ -28,8 +35,12 @@ function Results() {
 	const checkStatus = useAction(api.actions.checkJobStatus);
 	const getDownloadUrl = useMutation(api.results.getResultsDownloadUrl);
 	const [isRefreshing, setIsRefreshing] = useState(false);
-	const [representation, setRepresentation] = useState<"cartoon" | "ball-and-stick" | "surface">("cartoon");
-	const [colorScheme, setColorScheme] = useState<"chain" | "element" | "rainbow">("chain");
+	const [representation, setRepresentation] = useState<
+		"cartoon" | "ball-and-stick" | "surface"
+	>("cartoon");
+	const [_colorScheme, setColorScheme] = useState<
+		"chain" | "element" | "rainbow"
+	>("chain");
 	const molstarRef = useRef<MolstarViewerRef>(null);
 
 	// Show toast on error
@@ -60,7 +71,9 @@ function Results() {
 			return;
 		}
 		try {
-			const url = await getDownloadUrl({ storageId: simulation.resultStorageId });
+			const url = await getDownloadUrl({
+				storageId: simulation.resultStorageId,
+			});
 			if (url) {
 				window.open(url, "_blank");
 			}
@@ -70,12 +83,14 @@ function Results() {
 		}
 	};
 
-	const handleRepresentationChange = (type: "cartoon" | "ball-and-stick" | "surface") => {
+	const handleRepresentationChange = (
+		type: "cartoon" | "ball-and-stick" | "surface",
+	) => {
 		setRepresentation(type);
 		molstarRef.current?.setRepresentation(type);
 	};
 
-	const handleColorChange = (color: "chain" | "element" | "rainbow") => {
+	const _handleColorChange = (color: "chain" | "element" | "rainbow") => {
 		setColorScheme(color);
 		molstarRef.current?.setColor(color);
 	};
@@ -144,7 +159,10 @@ function Results() {
 									Refresh Status
 								</Button>
 								{simulation.status === "completed" && (
-									<Button onClick={handleDownload} className="bg-gradient-primary">
+									<Button
+										onClick={handleDownload}
+										className="bg-gradient-primary"
+									>
 										<Download className="mr-2 h-4 w-4" />
 										Download Results
 									</Button>
@@ -324,7 +342,9 @@ function Results() {
 																		key={type}
 																		size="sm"
 																		variant={
-																			representation === type ? "default" : "ghost"
+																			representation === type
+																				? "default"
+																				: "ghost"
 																		}
 																		onClick={() =>
 																			handleRepresentationChange(type as any)
@@ -371,7 +391,9 @@ function Results() {
 													Simulation Failed
 												</h3>
 												<p className="text-sm text-muted-foreground max-w-sm">
-													We encountered an error while processing your request. Please check the status details or contact support for assistance.
+													We encountered an error while processing your request.
+													Please check the status details or contact support for
+													assistance.
 												</p>
 											</Card>
 										</motion.div>
@@ -392,7 +414,8 @@ function Results() {
 												</h3>
 												<p className="text-sm text-muted-foreground max-w-sm">
 													Interactive visualization and detailed analysis will
-													become available once the current compute job finishes.
+													become available once the current compute job
+													finishes.
 												</p>
 											</Card>
 										</motion.div>

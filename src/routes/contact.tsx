@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useForm } from "@tanstack/react-form";
 import { useAction, useMutation } from "convex/react";
-import { useState } from "react";
 import { toast } from "sonner";
 import {
 	Accordion,
@@ -27,66 +27,56 @@ export const Route = createFileRoute("/contact")({
 });
 
 const ContactFormInner = () => {
-	const [formData, setFormData] = useState({
-		name: "",
-		email: "",
-		category: "",
-		subject: "",
-		message: "",
-	});
-	const [isSubmitting, setIsSubmitting] = useState(false);
 	const submitContactForm = useMutation(api.contact.submitContactForm);
 	const sendEmail = useAction(api.emails?.sendContactEmail);
 
-	const handleSubmit = async (e: React.FormEvent) => {
-		e.preventDefault();
-		setIsSubmitting(true);
-		try {
-			// Save to database
-			await submitContactForm({
-				name: formData.name,
-				email: formData.email,
-				subject: `[${formData.category}] ${formData.subject}`,
-				message: formData.message,
-			});
-
-			// Send email via Resend
+	const form = useForm({
+		defaultValues: {
+			name: "",
+			email: "",
+			category: "",
+			subject: "",
+			message: "",
+		},
+		onSubmit: async ({ value }) => {
 			try {
-				if (sendEmail) {
-					await sendEmail({
-						name: formData.name,
-						email: formData.email,
-						subject: `[${formData.category}] ${formData.subject}`,
-						message: formData.message,
-					});
-					toast.success(
-						"Message sent successfully! We'll get back to you soon.",
-					);
-				} else {
-					// If email API is not ready, just log or skip
-					console.warn("Email API not ready, skipped sending email.");
-					toast.success("Message saved! We'll respond shortly.");
-				}
-			} catch (emailError) {
-				// Email failed but form was saved
-				console.error("Email sending failed:", emailError);
-				toast.success("Message saved! We'll respond via email shortly.");
-			}
+				// Save to database
+				await submitContactForm({
+					name: value.name,
+					email: value.email,
+					subject: `[${value.category}] ${value.subject}`,
+					message: value.message,
+				});
 
-			setFormData({
-				name: "",
-				email: "",
-				category: "",
-				subject: "",
-				message: "",
-			});
-		} catch (error) {
-			console.error("Error submitting form:", error);
-			toast.error("Failed to send message. Please try again.");
-		} finally {
-			setIsSubmitting(false);
-		}
-	};
+				// Send email via Resend
+				try {
+					if (sendEmail) {
+						await sendEmail({
+							name: value.name,
+							email: value.email,
+							subject: `[${value.category}] ${value.subject}`,
+							message: value.message,
+						});
+						toast.success(
+							"Message sent successfully! We'll get back to you soon.",
+						);
+					} else {
+						console.warn("Email API not ready, skipped sending email.");
+						toast.success("Message saved! We'll respond shortly.");
+					}
+				} catch (emailError) {
+					console.error("Email sending failed:", emailError);
+					toast.success("Message saved! We'll respond via email shortly.");
+				}
+
+				// Reset form
+				form.reset();
+			} catch (error) {
+				console.error("Error submitting form:", error);
+				toast.error("Failed to send message. Please try again.");
+			}
+		},
+	});
 
 	return (
 		<Card className="border-border/40 bg-card/50 backdrop-blur-sm">
@@ -94,84 +84,105 @@ const ContactFormInner = () => {
 				<CardTitle>Send us a message</CardTitle>
 			</CardHeader>
 			<CardContent>
-				<form className="space-y-4" onSubmit={handleSubmit}>
+				<form
+					className="space-y-4"
+					onSubmit={(e) => {
+						e.preventDefault();
+						e.stopPropagation();
+						form.handleSubmit();
+					}}
+				>
 					<div className="grid gap-4 md:grid-cols-2">
-						<div className="space-y-2">
-							<Label htmlFor="name">Name</Label>
-							<Input
-								id="name"
-								onChange={(e) =>
-									setFormData({ ...formData, name: e.target.value })
-								}
-								placeholder="Your name"
-								required
-								value={formData.name}
-							/>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="email">Email</Label>
-							<Input
-								id="email"
-								onChange={(e) =>
-									setFormData({ ...formData, email: e.target.value })
-								}
-								placeholder="you@example.com"
-								required
-								type="email"
-								value={formData.email}
-							/>
-						</div>
+						<form.Field name="name">
+							{(field) => (
+								<div className="space-y-2">
+									<Label htmlFor="name">Name</Label>
+									<Input
+										id="name"
+										value={field.state.value}
+										onChange={(e) => field.handleChange(e.target.value)}
+										onBlur={field.handleBlur}
+										placeholder="Your name"
+										required
+									/>
+								</div>
+							)}
+						</form.Field>
+						<form.Field name="email">
+							{(field) => (
+								<div className="space-y-2">
+									<Label htmlFor="email">Email</Label>
+									<Input
+										id="email"
+										type="email"
+										value={field.state.value}
+										onChange={(e) => field.handleChange(e.target.value)}
+										onBlur={field.handleBlur}
+										placeholder="you@example.com"
+										required
+									/>
+								</div>
+							)}
+						</form.Field>
 					</div>
-					<div className="space-y-2">
-						<Label htmlFor="category">Category</Label>
-						<Select
-							onValueChange={(value) =>
-								setFormData({ ...formData, category: value })
-							}
-							value={formData.category}
-						>
-							<SelectTrigger>
-								<SelectValue placeholder="Select a topic" />
-							</SelectTrigger>
-							<SelectContent>
-								<SelectItem value="general">General Inquiry</SelectItem>
-								<SelectItem value="support">Technical Support</SelectItem>
-								<SelectItem value="billing">Billing & Credits</SelectItem>
-								<SelectItem value="partnership">Partnership</SelectItem>
-							</SelectContent>
-						</Select>
-					</div>
-					<div className="space-y-2">
-						<Label htmlFor="subject">Subject</Label>
-						<Input
-							id="subject"
-							onChange={(e) =>
-								setFormData({ ...formData, subject: e.target.value })
-							}
-							placeholder="How can we help?"
-							required
-							value={formData.subject}
-						/>
-					</div>
-					<div className="space-y-2">
-						<Label htmlFor="message">Message</Label>
-						<Textarea
-							className="min-h-[150px]"
-							id="message"
-							onChange={(e) =>
-								setFormData({ ...formData, message: e.target.value })
-							}
-							placeholder="Tell us more about your inquiry..."
-							required
-							value={formData.message}
-						/>
-					</div>
+					<form.Field name="category">
+						{(field) => (
+							<div className="space-y-2">
+								<Label htmlFor="category">Category</Label>
+								<Select
+									value={field.state.value}
+									onValueChange={(value) => field.handleChange(value)}
+								>
+									<SelectTrigger>
+										<SelectValue placeholder="Select a topic" />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="general">General Inquiry</SelectItem>
+										<SelectItem value="support">Technical Support</SelectItem>
+										<SelectItem value="billing">Billing & Credits</SelectItem>
+										<SelectItem value="partnership">Partnership</SelectItem>
+									</SelectContent>
+								</Select>
+							</div>
+						)}
+					</form.Field>
+					<form.Field name="subject">
+						{(field) => (
+							<div className="space-y-2">
+								<Label htmlFor="subject">Subject</Label>
+								<Input
+									id="subject"
+									value={field.state.value}
+									onChange={(e) => field.handleChange(e.target.value)}
+									onBlur={field.handleBlur}
+									placeholder="How can we help?"
+									required
+								/>
+							</div>
+						)}
+					</form.Field>
+					<form.Field name="message">
+						{(field) => (
+							<div className="space-y-2">
+								<Label htmlFor="message">Message</Label>
+								<Textarea
+									className="min-h-[150px]"
+									id="message"
+									value={field.state.value}
+									onChange={(e) => field.handleChange(e.target.value)}
+									onBlur={field.handleBlur}
+									placeholder="Tell us more about your inquiry..."
+									required
+								/>
+							</div>
+						)}
+					</form.Field>
 					<Button
 						className="w-full bg-gradient-primary shadow-glow transition-opacity hover:opacity-90"
-						disabled={isSubmitting}
+						disabled={form.state.isSubmitting}
 						type="submit"
 					>
-						{isSubmitting ? "Sending..." : "Send Message"}
+						{form.state.isSubmitting ? "Sending..." : "Send Message"}
 					</Button>
 				</form>
 			</CardContent>

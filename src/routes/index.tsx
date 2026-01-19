@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import {
 	ArrowRight,
-	Atom,
 	Box,
 	CheckCircle2,
 	FlaskConical,
@@ -10,7 +9,6 @@ import {
 	RotateCcw,
 	Shield,
 	Sparkles,
-	Timer,
 	Users,
 	Zap,
 } from "lucide-react";
@@ -484,7 +482,6 @@ function Index() {
 					</motion.div>
 				</div>
 			</section>
-
 			{/* Visualizations Section */}
 			<section className="relative overflow-hidden py-24 lg:py-32">
 				{/* Background Elements */}
@@ -493,15 +490,15 @@ function Index() {
 				<div className="absolute bottom-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-border to-transparent" />
 
 				<div className="container relative mx-auto px-4">
-					<div className="grid gap-16 lg:grid-cols-2 lg:items-center">
+					<div className="max-w-4xl mx-auto">
 						<motion.div
-							initial={{ opacity: 0, x: -50 }}
-							whileInView={{ opacity: 1, x: 0 }}
+							initial={{ opacity: 0, y: 20 }}
+							whileInView={{ opacity: 1, y: 0 }}
 							viewport={{ once: true }}
 							transition={{ duration: 0.6 }}
 							className="space-y-10"
 						>
-							<div>
+							<div className="text-center">
 								<span className="inline-block mb-4 px-4 py-2 rounded-full bg-secondary/10 text-secondary text-sm font-medium">
 									Visualization
 								</span>
@@ -510,7 +507,7 @@ function Index() {
 									<span className="text-gradient-secondary">Real-Time</span>
 								</h2>
 							</div>
-							<div className="space-y-5">
+							<div className="grid gap-6 md:grid-cols-2">
 								{visualizations.map((item, i) => (
 									<motion.div
 										key={i}
@@ -518,7 +515,7 @@ function Index() {
 										whileInView={{ opacity: 1, x: 0 }}
 										viewport={{ once: true }}
 										transition={{ delay: i * 0.1 }}
-										className="group flex items-center gap-4 p-4 rounded-xl transition-all duration-300 hover:bg-secondary/5"
+										className="group flex items-center gap-4 p-4 rounded-xl transition-all duration-300 hover:bg-secondary/5 border border-transparent hover:border-secondary/10 backdrop-blur-sm"
 									>
 										<div className="flex-shrink-0 h-10 w-10 rounded-lg bg-gradient-secondary flex items-center justify-center shadow-lg transition-transform group-hover:scale-110">
 											<CheckCircle2 className="h-5 w-5 text-white" />
@@ -527,121 +524,16 @@ function Index() {
 									</motion.div>
 								))}
 							</div>
-							<NavLink href="/features">
-								<Button
-									size="lg"
-									className="group h-14 bg-gradient-secondary text-lg font-semibold shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105"
-								>
-									Explore Features
-									<ArrowRight className="ml-2 h-5 w-5 transition-transform group-hover:translate-x-1" />
-								</Button>
-							</NavLink>
-						</motion.div>
-
-						{/* Visual Element */}
-						<motion.div
-							initial={{ opacity: 0, x: 50 }}
-							whileInView={{ opacity: 1, x: 0 }}
-							viewport={{ once: true }}
-							transition={{ duration: 0.6 }}
-							className="relative"
-						>
-							<div className="relative aspect-square lg:aspect-[4/3]">
-								{/* Glow Effect */}
-								<div className="absolute inset-0 rounded-3xl bg-gradient-to-tr from-primary/30 via-secondary/20 to-accent/30 blur-3xl opacity-50 animate-pulse" />
-
-								{/* Card Container */}
-								<div className="relative h-full rounded-3xl bg-gradient-to-br from-card/80 to-card/40 border border-border/50 backdrop-blur-xl shadow-2xl overflow-hidden">
-									{/* Fake Browser Header */}
-									<div className="absolute left-0 right-0 top-0 h-12 bg-black/20 backdrop-blur-sm flex items-center px-4 gap-2">
-										<div className="flex gap-2">
-											<div className="h-3 w-3 rounded-full bg-red-500/70 hover:bg-red-500 transition-colors cursor-pointer" />
-											<div className="h-3 w-3 rounded-full bg-yellow-500/70 hover:bg-yellow-500 transition-colors cursor-pointer" />
-											<div className="h-3 w-3 rounded-full bg-green-500/70 hover:bg-green-500 transition-colors cursor-pointer" />
-										</div>
-										<div className="flex-1 text-center text-xs text-white/50 font-mono">
-											Protein Structure Viewer
-										</div>
-									</div>
-
-									{/* Content */}
-									<div className="absolute inset-0 flex items-center justify-center pt-8">
-										<div className="relative">
-											{/* Animated Rings */}
-											<motion.div
-												animate={{ rotate: 360 }}
-												transition={{
-													duration: 20,
-													repeat: Number.POSITIVE_INFINITY,
-													ease: "linear",
-												}}
-												className="absolute inset-0 flex items-center justify-center"
-											>
-												<div className="w-48 h-48 md:w-64 md:h-64 rounded-full border-2 border-dashed border-primary/30" />
-											</motion.div>
-											<motion.div
-												animate={{ rotate: -360 }}
-												transition={{
-													duration: 15,
-													repeat: Number.POSITIVE_INFINITY,
-													ease: "linear",
-												}}
-												className="absolute inset-0 flex items-center justify-center"
-											>
-												<div className="w-36 h-36 md:w-48 md:h-48 rounded-full border border-secondary/30" />
-											</motion.div>
-
-											{/* Floating Icon */}
-											<motion.div
-												animate={{ y: [0, -10, 0] }}
-												transition={{
-													duration: 4,
-													repeat: Number.POSITIVE_INFINITY,
-													ease: "easeInOut",
-												}}
-											>
-												<Atom className="h-24 w-24 md:h-32 md:w-32 text-primary" />
-											</motion.div>
-
-											{/* Orbiting Particles */}
-											<motion.div
-												animate={{ rotate: 360 }}
-												transition={{
-													duration: 8,
-													repeat: Number.POSITIVE_INFINITY,
-													ease: "linear",
-												}}
-												className="absolute inset-0"
-											>
-												<div className="absolute top-0 left-1/2 w-3 h-3 rounded-full bg-secondary" />
-											</motion.div>
-										</div>
-									</div>
-
-									{/* Status Overlay */}
-									<div className="absolute bottom-4 right-4 rounded-lg bg-black/60 backdrop-blur-sm px-4 py-3 text-xs font-mono text-green-400 shadow-lg">
-										<div className="flex items-center gap-2">
-											<div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-											<Timer className="h-3 w-3" />
-											<span>EST: 2m 15s</span>
-										</div>
-									</div>
-
-									{/* Info Overlay */}
-									<div className="absolute left-4 bottom-4 rounded-lg bg-black/40 backdrop-blur-sm px-3 py-2 text-xs text-white/70">
-										<div className="flex items-center gap-2">
-											<div className="w-8 h-8 rounded bg-primary/20 flex items-center justify-center">
-												<FlaskConical className="h-4 w-4 text-primary" />
-											</div>
-											<div>
-												<div className="font-medium text-white/90">
-													4 Ligands
-												</div>
-												<div className="text-white/50">Active</div>
-											</div>
-										</div>
-									</div>
-								</div>
+							<div className="flex justify-center pt-4">
+								<NavLink href="/features">
+									<Button
+										size="lg"
+										className="group h-14 bg-gradient-secondary text-lg font-semibold shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105"
+									>
+										Explore Features
+										<ArrowRight className="ml-2 h-5 w-5 transition-transform group-hover:translate-x-1" />
+									</Button>
+								</NavLink>
 							</div>
 						</motion.div>
 					</div>

@@ -34,15 +34,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	const isLoading = currentUser === undefined;
 	const user: User | null = currentUser
 		? {
-				id: currentUser._id,
-				email: currentUser.email ?? "",
-				name: currentUser.name ?? "",
-				emailVerified: currentUser.emailVerified !== undefined,
-				image: currentUser.image || undefined,
-				createdAt: new Date(currentUser._creationTime),
-				updatedAt: new Date(currentUser._creationTime),
-				credits: currentUser.credits ?? 0,
-			}
+			id: currentUser._id,
+			email: currentUser.email ?? "",
+			name: currentUser.name ?? "",
+			emailVerified: currentUser.emailVerified !== undefined,
+			image: currentUser.image || undefined,
+			createdAt: new Date(currentUser._creationTime),
+			updatedAt: new Date(currentUser._creationTime),
+			credits: currentUser.credits ?? 0,
+		}
 		: null;
 
 	const signIn = async (email: string, password: string) => {

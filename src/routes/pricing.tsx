@@ -3,6 +3,14 @@ import { useAction } from "convex/react";
 import { ArrowRight, Check, DollarSign, Sparkles, Zap } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { z } from "zod";
+import {
+	CurrencySelector,
+	convertPrice,
+	detectUserCurrency,
+	formatPrice,
+	useLiveCurrencyRates,
+} from "@/components/CurrencySelector";
 import {
 	Accordion,
 	AccordionContent,
@@ -16,8 +24,6 @@ import { useAuth } from "@/lib/auth";
 import { convex } from "@/lib/convex";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-
-import { z } from "zod";
 
 const pricingSearchSchema = z.object({
 	status: z.string().optional(),
@@ -35,6 +41,17 @@ const PricingContentInner = ({ user }: { user: any }) => {
 	const [isVisible, setIsVisible] = useState(false);
 	const createCheckout = useAction(api.payments.createCheckout);
 	const [selectedCredits, setSelectedCredits] = useState(1000);
+	const [selectedCurrency, setSelectedCurrency] = useState(() =>
+		detectUserCurrency(),
+	);
+
+	// Use live currency rates
+	const {
+		currencies,
+		isLoading: isLoadingRates,
+		lastUpdate,
+		updateRates,
+	} = useLiveCurrencyRates();
 
 	useEffect(() => {
 		setIsVisible(true);
@@ -45,7 +62,8 @@ const PricingContentInner = ({ user }: { user: any }) => {
 			});
 		} else if (search.status === "failed" || search.status === "cancel") {
 			toast.error("Payment failed", {
-				description: "Please try again or contact support if the issue persists.",
+				description:
+					"Please try again or contact support if the issue persists.",
 			});
 		}
 	}, [search.status]);
@@ -72,7 +90,25 @@ const PricingContentInner = ({ user }: { user: any }) => {
 	];
 
 	const creditsNeeded = selectedCredits;
-	const costInDollars = (creditsNeeded / 10).toFixed(2);
+	const costInUSD = creditsNeeded / 10;
+	const costInSelectedCurrency = convertPrice(costInUSD, selectedCurrency);
+	const formattedPrice = formatPrice(costInSelectedCurrency, selectedCurrency);
+
+	// Get country code from selected currency
+	const getCountryFromCurrency = (currencyCode: string): string => {
+		const currencyToCountry: Record<string, string> = {
+			INR: "IN",
+			GBP: "GB",
+			CAD: "CA",
+			AUD: "AU",
+			EUR: "DE",
+			JPY: "JP",
+			SGD: "SG",
+			AED: "AE",
+			USD: "US",
+		};
+		return currencyToCountry[currencyCode] || "US";
+	};
 
 	const handleBuyCredits = async () => {
 		if (!user) {
@@ -93,6 +129,8 @@ const PricingContentInner = ({ user }: { user: any }) => {
 			const res = await createCheckout({
 				userId: user.id as Id<"users">,
 				credits: creditsNeeded,
+				currency: selectedCurrency,
+				country: getCountryFromCurrency(selectedCurrency),
 			});
 
 			const url = (res as any)?.checkout_url as string | undefined;
@@ -216,6 +254,48 @@ const PricingContentInner = ({ user }: { user: any }) => {
 							</CardHeader>
 
 							<CardContent className="relative space-y-8">
+								{/* Currency Selector */}
+								<div className="space-y-2">
+									<div className="flex justify-center">
+										<CurrencySelector
+											selectedCurrency={selectedCurrency}
+											onCurrencyChange={setSelectedCurrency}
+											showRefresh={true}
+											onRefresh={updateRates}
+											isRefreshing={isLoadingRates}
+										/>
+									</div>
+									{lastUpdate && (
+										<p className="text-xs text-center text-muted-foreground">
+											Live rates • Updated {lastUpdate.toLocaleTimeString()}
+										</p>
+									)}
+								</div>
+
+								{selectedCurrency === "INR" && (
+									<div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-secondary/10 border border-secondary/20">
+										<Zap className="h-5 w-5 text-secondary" />
+										<p className="text-sm font-medium text-secondary">
+											UPI payments available (PhonePe, Google Pay, Paytm, BHIM)
+										</p>
+									</div>
+								)}
+
+								{/* Exchange Rate Indicator */}
+								{selectedCurrency !== "USD" && currencies.length > 0 && (
+									<div className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary/5 border border-primary/10">
+										<DollarSign className="h-4 w-4 text-primary" />
+										<p className="text-sm text-muted-foreground">
+											1 USD ={" "}
+											{formatPrice(
+												currencies.find((c) => c.code === selectedCurrency)
+													?.rate || 1,
+												selectedCurrency,
+											)}
+										</p>
+									</div>
+								)}
+
 								{/* Credit Rate Display */}
 								<div className="text-center py-8 px-6 rounded-2xl bg-muted/30 backdrop-blur-sm">
 									<div className="flex items-baseline justify-center gap-3 mb-2">
@@ -268,10 +348,11 @@ const PricingContentInner = ({ user }: { user: any }) => {
 									<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 										{creditOptions.map((option) => (
 											<Card
-												className={`relative cursor-pointer transition-all duration-300 hover:scale-105 ${selectedCredits === option.credits
-													? "border-primary bg-primary/10 shadow-glow-sm"
-													: "border-border/40 bg-background hover:border-primary/30"
-													}`}
+												className={`relative cursor-pointer transition-all duration-300 hover:scale-105 ${
+													selectedCredits === option.credits
+														? "border-primary bg-primary/10 shadow-glow-sm"
+														: "border-border/40 bg-background hover:border-primary/30"
+												}`}
 												key={option.credits}
 												onClick={() => setSelectedCredits(option.credits)}
 											>
@@ -296,7 +377,13 @@ const PricingContentInner = ({ user }: { user: any }) => {
 														</span>
 													</div>
 													<div className="text-2xl font-bold">
-														${(option.credits / 10).toFixed(0)}
+														{formatPrice(
+															convertPrice(
+																option.credits / 10,
+																selectedCurrency,
+															),
+															selectedCurrency,
+														)}
 													</div>
 													{selectedCredits === option.credits && (
 														<div className="absolute top-3 right-3">
@@ -329,7 +416,7 @@ const PricingContentInner = ({ user }: { user: any }) => {
 											value={selectedCredits}
 										/>
 										<div className="flex items-center px-6 rounded-xl bg-muted/50 border border-border/40 font-bold text-xl">
-											${costInDollars}
+											{formattedPrice}
 										</div>
 									</div>
 								</div>
@@ -348,8 +435,8 @@ const PricingContentInner = ({ user }: { user: any }) => {
 										</div>
 									) : (
 										<>
-											Buy {creditsNeeded.toLocaleString()} credits for $
-											{costInDollars}
+											Buy {creditsNeeded.toLocaleString()} credits for{" "}
+											{formattedPrice}
 											<ArrowRight className="ml-2 h-5 w-5" />
 										</>
 									)}
@@ -417,7 +504,7 @@ const PricingContentInner = ({ user }: { user: any }) => {
 						>
 							{isLoading
 								? "Redirecting..."
-								: `Buy ${creditsNeeded.toLocaleString()} credits ($${costInDollars})`}
+								: `Buy ${creditsNeeded.toLocaleString()} credits (${formattedPrice})`}
 						</Button>
 					</div>
 				</div>
