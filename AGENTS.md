@@ -266,3 +266,6 @@ export function Button({ className, variant, ...props }: ButtonProps) {
 - Use Tailwind's utility classes
 - Custom CSS variables with kebab-case
 - Component-scoped styles when necessary
+
+### Important Instructions
+- Do NOT build checks

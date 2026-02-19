@@ -46,71 +46,72 @@ function Features() {
 			title: "Cloud Native",
 			description:
 				"Run simulations on our scalable cloud infrastructure. No local hardware needed.",
-			gradient: "from-blue-500 to-cyan-500",
+			accentClass: "bg-gradient-primary",
 		},
 		{
 			icon: <Cpu className="h-8 w-8" />,
 			title: "GPU Acceleration",
 			description: "Powered by latest NVIDIA H100 GPUs for maximum throughput.",
-			gradient: "from-purple-500 to-pink-500",
+			accentClass: "bg-gradient-secondary",
 		},
 		{
 			icon: <Database className="h-8 w-8" />,
 			title: "Automated Parametrization",
 			description:
 				"Auto-generate force field parameters for small molecules using GAFF2/OpenFF.",
-			gradient: "from-amber-500 to-orange-500",
+			accentClass: "bg-primary",
 		},
 		{
 			icon: <Activity className="h-8 w-8" />,
 			title: "Real-time Monitoring",
 			description:
 				"Watch your simulation progress with live energetic plots and trajectory streaming.",
-			gradient: "from-emerald-500 to-teal-500",
+			accentClass: "bg-secondary",
 		},
 		{
 			icon: <BarChart3 className="h-8 w-8" />,
 			title: "Advanced Analysis",
 			description:
 				"Built-in tools for RMSD, RMSF, Hydrogen bonding, and free energy calculations.",
-			gradient: "from-rose-500 to-pink-500",
+			accentClass: "bg-accent",
 		},
 		{
 			icon: <Lock className="h-8 w-8" />,
 			title: "Secure Storage",
 			description:
 				"Your data is encrypted at rest and in transit. Compliant with industry standards.",
-			gradient: "from-slate-500 to-zinc-500",
+			accentClass: "bg-gradient-secondary",
 		},
 		{
 			icon: <Globe className="h-8 w-8" />,
 			title: "Global CDN",
 			description:
 				"Access your data from anywhere in the world with low latency.",
-			gradient: "from-indigo-500 to-blue-500",
+			accentClass: "bg-gradient-primary",
 		},
 		{
 			icon: <Share2 className="h-8 w-8" />,
 			title: "Collaboration",
 			description:
 				"Share projects with your team or collaborators with granular permission controls.",
-			gradient: "from-fuchsia-500 to-purple-500",
+			accentClass: "bg-secondary",
 		},
 		{
 			icon: <Zap className="h-8 w-8" />,
 			title: "API Access",
 			description:
 				"Integrate Phage into your automated workflows with our comprehensive REST API.",
-			gradient: "from-yellow-500 to-amber-500",
+			accentClass: "bg-accent",
 		},
 	];
 
 	return (
-		<div className="min-h-screen bg-background overflow-x-hidden">
+		<div className="fusion-canvas min-h-screen bg-background overflow-x-hidden">
 			{/* Hero Section */}
 			<section className="relative pt-32 pb-20 overflow-hidden">
 				{/* Background elements */}
 				<div className="absolute inset-0 mesh-gradient opacity-30 pointer-events-none" />
+				<div className="absolute inset-0 organic-bg opacity-25 pointer-events-none" />
 				<motion.div
 					animate={{ y: [0, -20, 0], opacity: [0.3, 0.5, 0.3] }}
 					transition={{ duration: 6, repeat: Number.POSITIVE_INFINITY }}
@@ -231,10 +232,10 @@ function Features() {
 								<Card className="h-full group interactive-card border-border/50 bg-card/50 backdrop-blur-sm overflow-hidden">
 									<CardHeader className="pb-4">
 										<div
-											className={`mb-6 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br ${feature.gradient} text-white shadow-lg transition-transform duration-300 group-hover:scale-110 group-hover:shadow-xl`}
-										>
-											{feature.icon}
-										</div>
+										className={`mb-6 inline-flex h-16 w-16 items-center justify-center rounded-2xl ${feature.accentClass} text-white shadow-lg transition-transform duration-300 group-hover:scale-110 group-hover:shadow-xl`}
+									>
+										{feature.icon}
+									</div>
 										<CardTitle className="text-xl font-bold group-hover:text-gradient transition-all duration-300">
 											{feature.title}
 										</CardTitle>
@@ -287,21 +288,21 @@ function Features() {
 									title: "Upload Your Structure",
 									description:
 										"Drop your PDB files for proteins and SDF files for ligands. We handle the rest.",
-									gradient: "from-blue-500 to-cyan-500",
+									accentClass: "bg-gradient-primary",
 								},
 								{
 									step: "02",
 									title: "Configure Parameters",
 									description:
 										"Choose simulation length, temperature, and other parameters. Use our presets or customize.",
-									gradient: "from-purple-500 to-pink-500",
+									accentClass: "bg-gradient-secondary",
 								},
 								{
 									step: "03",
 									title: "Analyze Results",
 									description:
 										"View trajectories, plots, and export publication-ready figures automatically.",
-									gradient: "from-emerald-500 to-teal-500",
+									accentClass: "bg-primary",
 								},
 							].map((item, i) => (
 								<motion.div
@@ -314,7 +315,7 @@ function Features() {
 									className="group flex gap-6 p-6 rounded-2xl transition-colors duration-300 hover:bg-card/50 border border-transparent hover:border-border/50"
 								>
 									<div
-										className={`flex-shrink-0 w-16 h-16 rounded-2xl bg-gradient-to-br ${item.gradient} flex items-center justify-center text-white font-bold text-xl shadow-lg transition-transform group-hover:scale-110`}
+										className={`flex-shrink-0 w-16 h-16 rounded-2xl ${item.accentClass} flex items-center justify-center text-white font-bold text-xl shadow-lg transition-transform group-hover:scale-110`}
 									>
 										{item.step}
 									</div>

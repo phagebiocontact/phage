@@ -52,7 +52,7 @@ function SuccessPage() {
 	}, []);
 
 	return (
-		<div className="min-h-screen bg-background flex flex-col items-center justify-center relative overflow-hidden px-4 py-20">
+		<div className="fusion-canvas min-h-screen bg-background flex flex-col items-center justify-center relative overflow-hidden px-4 py-20">
 			{/* Premium Background Effects */}
 			<div className="absolute inset-0 mesh-gradient opacity-20 pointer-events-none" />
 			<motion.div

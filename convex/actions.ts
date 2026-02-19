@@ -118,8 +118,8 @@ export const checkJobStatus = action({
   args: {
     simulationId: v.id("simulations"),
   },
-  handler: async (ctx, args) => {
-    const simulation = await ctx.runQuery(api.simulations.getSimulation, {
+  handler: async (ctx, args): Promise<any> => {
+    const simulation: any = await ctx.runQuery(api.simulations.getSimulation, {
       id: args.simulationId,
     });
 
@@ -129,7 +129,7 @@ export const checkJobStatus = action({
 
     try {
       const modalApiUrl = process.env.MODAL_API_URL || "https://greenrace66--md-fapi.modal.run";
-      const response = await fetch(
+      const response: Response = await fetch(
         `${modalApiUrl}/jobs/${simulation.modalJobId}/status`
       );
 
@@ -137,7 +137,7 @@ export const checkJobStatus = action({
         throw new Error(`Modal API error: ${response.statusText}`);
       }
 
-      const statusData = await response.json();
+      const statusData: any = await response.json();
 
       // Update simulation status
       await ctx.runMutation(internal.simulations.updateSimulationStatus, {

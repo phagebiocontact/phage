@@ -97,7 +97,7 @@ function Results() {
 
 	if (!simulation) {
 		return (
-			<div className="min-h-screen bg-background flex items-center justify-center">
+			<div className="fusion-canvas min-h-screen bg-background flex items-center justify-center">
 				<Card className="border-border/40 bg-card/50 backdrop-blur-sm p-12">
 					<p className="text-muted-foreground">Loading simulation...</p>
 				</Card>
@@ -107,8 +107,8 @@ function Results() {
 
 	const statusColors = {
 		pending: "bg-yellow-500",
-		queued: "bg-blue-500",
-		running: "bg-indigo-500",
+		queued: "bg-secondary",
+		running: "bg-primary",
 		completed: "bg-green-500",
 		failed: "bg-red-500",
 	};
@@ -123,7 +123,7 @@ function Results() {
 	};
 
 	return (
-		<div className="min-h-screen bg-background">
+		<div className="fusion-canvas min-h-screen bg-background">
 			<section className="pt-32 pb-12">
 				<div className="container mx-auto px-4">
 					<div className="mx-auto max-w-6xl">

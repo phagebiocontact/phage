@@ -69,7 +69,7 @@ function Auth() {
 	const allRequirementsMet = passwordRequirements.every((req) => req.valid);
 
 	return (
-		<div className="min-h-screen flex">
+		<div className="fusion-canvas min-h-screen flex">
 			{/* Left side - decorative */}
 			<div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-gradient-to-br from-primary/10 via-secondary/5 to-accent/10">
 				{/* Animated background elements */}

@@ -516,7 +516,7 @@ const PricingContentInner = ({ user }: { user: any }) => {
 function Pricing() {
 	const { user } = useAuth();
 	return (
-		<div className="min-h-screen bg-background overflow-x-hidden">
+		<div className="fusion-canvas min-h-screen bg-background overflow-x-hidden">
 			{convex ? (
 				<PricingContentInner user={user} />
 			) : (

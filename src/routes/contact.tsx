@@ -215,7 +215,7 @@ function Contact() {
 	];
 
 	return (
-		<div className="min-h-screen bg-background">
+		<div className="fusion-canvas min-h-screen bg-background">
 			<div className="relative pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-hidden">
 				{/* Background elements */}
 				<div className="absolute inset-0 mesh-gradient opacity-30 pointer-events-none" />
@@ -245,17 +245,6 @@ function Contact() {
 										</AccordionItem>
 									))}
 								</Accordion>
-							</div>
-
-							<div className="p-6 rounded-2xl bg-secondary/5 border border-secondary/10">
-								<h3 className="font-semibold text-lg mb-2 text-secondary">
-									Office Hours
-								</h3>
-								<p className="text-muted-foreground">
-									Monday - Friday: 9:00 AM - 6:00 PM EST
-									<br />
-									Weekend: Closed
-								</p>
 							</div>
 						</div>
 

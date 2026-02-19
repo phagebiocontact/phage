@@ -461,14 +461,14 @@ const SimulateContentInner = ({
 function Simulate() {
 	const { user, updateCredits } = useAuth();
 	return (
-		<div className="min-h-screen bg-background">
+		<div className="fusion-canvas min-h-screen bg-background">
 			<section className="pt-32 pb-12">
 				<div className="container mx-auto px-4">
 					<div className="mx-auto max-w-5xl">
 						<div className="mb-8 animate-fade-in">
 							<h1 className="mb-4 font-bold text-4xl md:text-5xl">
 								New{" "}
-								<span className="bg-gradient-to-r from-blue-600 via-indigo-500 to-cyan-500 bg-clip-text text-transparent">
+								<span className="text-gradient">
 									Simulation
 								</span>
 							</h1>

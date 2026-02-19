@@ -1,3 +1,4 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Manrope:wght@400;500;600;700&family=Sora:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 @theme {
   --color-background: hsl(var(--background));
@@ -219,42 +220,42 @@
 @layer base {
   :root {
     --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --foreground: 196 46% 10%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 196 46% 10%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 239 84% 67%;
+    --popover-foreground: 196 46% 10%;
+    --primary: 189 90% 56%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 174 83% 40%;
+    --secondary: 153 64% 41%;
     --secondary-foreground: 0 0% 100%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 199 89% 48%;
+    --muted: 168 26% 94%;
+    --muted-foreground: 194 16% 38%;
+    --accent: 169 72% 46%;
     --accent-foreground: 0 0% 100%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 239 84% 67%;
+    --border: 178 28% 85%;
+    --input: 178 28% 85%;
+    --ring: 189 90% 56%;
     --radius: 0.75rem;
     --gradient-primary: linear-gradient(
       135deg,
-      hsl(239 84% 67%),
-      hsl(199 89% 48%)
+      hsl(189 90% 56%),
+      hsl(153 64% 41%)
     );
     --gradient-secondary: linear-gradient(
       135deg,
-      hsl(174 83% 40%),
-      hsl(199 89% 48%)
+      hsl(153 64% 41%),
+      hsl(169 72% 46%)
     );
     --gradient-hero: linear-gradient(
       180deg,
       hsl(0 0% 100% / 0.95),
       hsl(210 40% 98% / 0.8)
     );
-    --shadow-glow: 0 0 40px hsl(239 84% 67% / 0.3);
-    --shadow-card: 0 10px 30px -10px hsl(239 84% 67% / 0.2);
+    --shadow-glow: 0 0 44px hsl(189 90% 56% / 0.26);
+    --shadow-card: 0 10px 30px -10px hsl(166 60% 33% / 0.18);
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
@@ -271,42 +272,42 @@
     --chart-5: 27 87% 67%;
   }
   .dark {
-    --background: 222 47% 6%;
-    --foreground: 210 40% 98%;
-    --card: 222 47% 9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222 47% 9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 239 84% 67%;
+    --background: 198 36% 6%;
+    --foreground: 184 35% 96%;
+    --card: 200 27% 10%;
+    --card-foreground: 184 35% 96%;
+    --popover: 200 27% 10%;
+    --popover-foreground: 184 35% 96%;
+    --primary: 189 90% 56%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 174 83% 40%;
+    --secondary: 153 64% 41%;
     --secondary-foreground: 0 0% 100%;
-    --muted: 217.2 32.6% 12%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 199 89% 48%;
+    --muted: 202 20% 15%;
+    --muted-foreground: 190 12% 72%;
+    --accent: 169 72% 46%;
     --accent-foreground: 0 0% 100%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 18%;
-    --input: 217.2 32.6% 15%;
-    --ring: 239 84% 67%;
+    --border: 198 24% 21%;
+    --input: 198 24% 19%;
+    --ring: 189 90% 56%;
     --gradient-primary: linear-gradient(
       135deg,
-      hsl(239 84% 67%),
-      hsl(199 89% 48%)
+      hsl(189 90% 56%),
+      hsl(153 64% 41%)
     );
     --gradient-secondary: linear-gradient(
       135deg,
-      hsl(174 83% 40%),
-      hsl(199 89% 48%)
+      hsl(153 64% 41%),
+      hsl(169 72% 46%)
     );
     --gradient-hero: linear-gradient(
       180deg,
-      hsl(222 47% 6% / 0.95),
-      hsl(222 47% 3% / 0.9)
+      hsl(198 36% 6% / 0.95),
+      hsl(198 36% 3% / 0.9)
     );
-    --shadow-glow: 0 0 50px hsl(239 84% 67% / 0.4);
-    --shadow-card: 0 10px 40px -10px hsl(239 84% 67% / 0.3);
+    --shadow-glow: 0 0 54px hsl(189 90% 56% / 0.34);
+    --shadow-card: 0 10px 40px -10px hsl(166 60% 33% / 0.28);
     --sidebar-background: 240 5.9% 10%;
     --sidebar-foreground: 240 4.8% 95.9%;
     --sidebar-primary: 224.3 76.3% 48%;
@@ -328,10 +329,54 @@
   }
   body {
     background-color: hsl(var(--background));
+    background-image:
+      linear-gradient(
+        to right,
+        hsl(var(--primary) / 0.14) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to bottom,
+        hsl(var(--primary) / 0.14) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to right,
+        hsl(var(--primary) / 0.22) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to bottom,
+        hsl(var(--primary) / 0.22) 1px,
+        transparent 1px
+      );
+    background-size:
+      42px 42px,
+      42px 42px,
+      210px 210px,
+      210px 210px;
+    background-attachment: fixed;
     color: hsl(var(--foreground));
+    font-family: var(--font-body, "Manrope", sans-serif);
     font-feature-settings:
       "rlig" 1,
       "calt" 1;
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display, "Sora", sans-serif);
+    letter-spacing: -0.01em;
+    font-weight: 400;
+  }
+  .font-display {
+    font-family: var(--font-display, "Sora", sans-serif);
+  }
+  .font-body {
+    font-family: var(--font-body, "Manrope", sans-serif);
+  }
+  .font-mono {
+    font-family: var(--font-mono, "IBM Plex Mono", monospace);
   }
   html.lenis, html.lenis body {
     height: auto;
@@ -447,22 +492,22 @@
     border: 1px solid hsl(var(--border) / 0.3);
   }
   .text-gradient {
-    background: linear-gradient(135deg, #4f46e5, #06b6d4);
+    background: var(--gradient-primary);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
   .text-gradient-secondary {
-    background: linear-gradient(135deg, #14b8a6, #06b6d4);
+    background: var(--gradient-secondary);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
   .bg-gradient-primary {
-    background: linear-gradient(135deg, #4f46e5, #06b6d4);
+    background: var(--gradient-primary);
   }
   .bg-gradient-secondary {
-    background: linear-gradient(135deg, #14b8a6, #06b6d4);
+    background: var(--gradient-secondary);
   }
   .bg-gradient-hero {
     background: linear-gradient(
@@ -562,32 +607,52 @@
   }
   .mesh-gradient {
     background:
+      linear-gradient(
+        to right,
+        hsl(var(--primary) / 0.08) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to bottom,
+        hsl(var(--primary) / 0.08) 1px,
+        transparent 1px
+      ),
       radial-gradient(
         at 40% 20%,
-        hsl(var(--primary) / 0.08) 0px,
+        hsl(var(--primary) / 0.11) 0px,
         transparent 50%
       ),
       radial-gradient(
         at 80% 0%,
-        hsl(var(--secondary) / 0.05) 0px,
+        hsl(var(--secondary) / 0.12) 0px,
         transparent 50%
       ),
-      radial-gradient(at 0% 50%, hsl(var(--accent) / 0.05) 0px, transparent 50%),
+      radial-gradient(at 0% 50%, hsl(var(--accent) / 0.1) 0px, transparent 50%),
       radial-gradient(
         at 80% 50%,
-        hsl(var(--primary) / 0.04) 0px,
+        hsl(var(--primary) / 0.07) 0px,
         transparent 50%
       ),
       radial-gradient(
         at 0% 100%,
-        hsl(var(--secondary) / 0.06) 0px,
+        hsl(var(--secondary) / 0.1) 0px,
         transparent 50%
       ),
       radial-gradient(
         at 80% 100%,
-        hsl(var(--primary) / 0.05) 0px,
+        hsl(var(--primary) / 0.08) 0px,
         transparent 50%
       );
+    background-size:
+      52px 52px,
+      52px 52px,
+      auto,
+      auto,
+      auto,
+      auto,
+      auto,
+      auto;
+    background-attachment: fixed;
     pointer-events: none;
   }
   .gradient-border {
@@ -632,5 +697,131 @@
   }
   ::-webkit-scrollbar-thumb:hover {
     background: hsl(var(--muted-foreground) / 0.5);
+  }
+}
+
+:root {
+  --font-display: "Sora", "Archivo", sans-serif;
+  --font-body: "Manrope", "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", monospace;
+  --primary: 189 90% 56%;
+  --secondary: 153 64% 41%;
+  --accent: 169 72% 46%;
+  --ring: 189 90% 56%;
+  --gradient-primary: linear-gradient(120deg, hsl(189 90% 56%), hsl(153 64% 41%));
+  --gradient-secondary: linear-gradient(120deg, hsl(153 64% 41%), hsl(169 72% 46%));
+  --shadow-glow: 0 0 54px hsl(189 90% 56% / 0.32);
+  --shadow-card: 0 18px 34px -18px hsl(164 53% 24% / 0.28);
+}
+
+.dark {
+  --background: 198 36% 6%;
+  --foreground: 184 35% 96%;
+  --card: 200 27% 10%;
+  --card-foreground: 184 35% 96%;
+  --muted: 202 20% 15%;
+  --muted-foreground: 190 12% 72%;
+  --border: 198 24% 21%;
+  --input: 198 24% 19%;
+}
+
+.quantum-grid {
+  background-image:
+    linear-gradient(hsl(var(--primary) / 0.14) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--primary) / 0.14) 1px, transparent 1px);
+  background-size: 46px 46px, 46px 46px;
+  background-attachment: fixed;
+}
+
+.organic-bg {
+  background:
+    radial-gradient(circle at 16% 16%, hsl(var(--secondary) / 0.3), transparent 42%),
+    radial-gradient(circle at 82% 14%, hsl(var(--primary) / 0.22), transparent 40%),
+    radial-gradient(circle at 60% 82%, hsl(var(--accent) / 0.2), transparent 44%);
+}
+
+.fusion-canvas {
+  position: relative;
+  isolation: isolate;
+}
+
+.fusion-canvas::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 14% 16%, hsl(var(--secondary) / 0.2), transparent 34%),
+    radial-gradient(circle at 84% 14%, hsl(var(--primary) / 0.16), transparent 38%),
+    radial-gradient(circle at 55% 80%, hsl(var(--accent) / 0.15), transparent 38%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.fusion-canvas::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(hsl(var(--primary) / 0.2) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--primary) / 0.2) 1px, transparent 1px),
+    linear-gradient(hsl(var(--primary) / 0.32) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--primary) / 0.32) 1px, transparent 1px),
+    linear-gradient(
+      180deg,
+      transparent 0%,
+      hsl(var(--primary) / 0.24) 45%,
+      transparent 100%
+    );
+  background-size:
+    42px 42px,
+    42px 42px,
+    210px 210px,
+    210px 210px,
+    100% 28%;
+  background-position:
+    0 0,
+    0 0,
+    0 0,
+    0 0,
+    0 -60%;
+  mix-blend-mode: normal;
+  opacity: 0.72;
+  pointer-events: none;
+  z-index: 1;
+  background-attachment: fixed;
+  animation: scanner-sweep 8s ease-in-out infinite;
+}
+
+.fusion-canvas > * {
+  position: relative;
+  z-index: 2;
+}
+
+@keyframes lattice-pan {
+  from {
+    background-position:
+      0 0,
+      0 0,
+      0 0,
+      0 0,
+      0 -60%;
+  }
+  to {
+    background-position:
+      42px 42px,
+      42px 42px,
+      210px 210px,
+      210px 210px,
+      0 180%;
+  }
+}
+
+@keyframes scanner-sweep {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 0.6;
   }
 }

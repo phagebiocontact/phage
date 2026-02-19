@@ -80,7 +80,7 @@ const getStatusColor = (status: string) => {
 		case "completed":
 			return "bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25";
 		case "running":
-			return "bg-blue-500/15 text-blue-400 border-blue-500/30 hover:bg-blue-500/25";
+			return "bg-primary/15 text-primary border-primary/30 hover:bg-primary/25";
 		case "failed":
 			return "bg-red-500/15 text-red-400 border-red-500/30 hover:bg-red-500/25";
 		case "pending":
@@ -625,7 +625,7 @@ function Jobs() {
 	const { user } = useAuth();
 	const navigate = useNavigate();
 	return (
-		<div className="min-h-screen bg-background">
+		<div className="fusion-canvas min-h-screen bg-background">
 			<section className="pt-32 pb-12">
 				<div className="container mx-auto px-4">
 					<motion.div

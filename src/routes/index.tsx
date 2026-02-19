@@ -9,7 +9,6 @@ import {
 	RotateCcw,
 	Shield,
 	Sparkles,
-	Users,
 	Zap,
 } from "lucide-react";
 import {
@@ -18,7 +17,7 @@ import {
 	useMotionValue,
 	useSpring,
 } from "motion/react";
-import { lazy, Suspense, useRef, useState } from "react";
+import { lazy, Suspense, useId, useRef, useState } from "react";
 import type { MolstarViewerRef } from "@/components/MolstarViewer";
 import { NavLink } from "@/components/NavLink";
 import { Button } from "@/components/ui/button";
@@ -45,6 +44,7 @@ const staggerContainer = {
 
 function Index() {
 	const heroRef = useRef<HTMLDivElement>(null);
+	const underlineId = useId();
 	const molstarRef = useRef<MolstarViewerRef>(null);
 	const [currentRepr, setCurrentRepr] = useState<
 		"cartoon" | "ball-and-stick" | "surface"
@@ -66,24 +66,6 @@ function Index() {
 
 	const background = useMotionTemplate`radial-gradient(600px circle at ${useSpring(mouseX, { stiffness: 50, damping: 20 }).get() * 100}% ${useSpring(mouseY, { stiffness: 50, damping: 20 }).get() * 100}%, hsl(var(--primary) / 0.15), transparent 40%)`;
 
-	const stats = [
-		{
-			value: "10k+",
-			label: "Simulations Run",
-			icon: <Sparkles className="h-5 w-5" />,
-		},
-		{ value: "99.9%", label: "Uptime", icon: <Shield className="h-5 w-5" /> },
-		{
-			value: "50x",
-			label: "Faster Results",
-			icon: <Zap className="h-5 w-5" />,
-		},
-		{
-			value: "24/7",
-			label: "Expert Support",
-			icon: <Users className="h-5 w-5" />,
-		},
-	];
 
 	const features = [
 		{
@@ -91,21 +73,21 @@ function Index() {
 			title: "Flash Speed",
 			description:
 				"Leverage our distributed GPU cloud to run simulations in minutes, not days.",
-			gradient: "from-yellow-500 to-orange-500",
+			accentClass: "bg-gradient-primary",
 		},
 		{
 			icon: <Shield className="h-8 w-8" />,
 			title: "Enterprise Security",
 			description:
 				"Your data is encrypted end-to-end with industry-standard protocols.",
-			gradient: "from-emerald-500 to-teal-500",
+			accentClass: "bg-gradient-secondary",
 		},
 		{
 			icon: <FlaskConical className="h-8 w-8" />,
 			title: "High Accuracy",
 			description:
 				"Validated force fields and algorithms ensure publication-quality results.",
-			gradient: "from-violet-500 to-purple-500",
+			accentClass: "bg-accent",
 		},
 	];
 
@@ -117,7 +99,7 @@ function Index() {
 	];
 
 	return (
-		<div className="min-h-screen bg-background overflow-x-hidden">
+		<div className="fusion-canvas min-h-screen bg-background overflow-x-hidden">
 			{/* Hero Section */}
 			<section
 				ref={heroRef}
@@ -126,6 +108,7 @@ function Index() {
 			>
 				{/* Dynamic Background */}
 				<div className="absolute inset-0 mesh-gradient opacity-30 pointer-events-none" />
+				<div className="absolute inset-0 organic-bg opacity-30 pointer-events-none" />
 				<motion.div
 					className="absolute inset-0 pointer-events-none"
 					style={{ background }}
@@ -183,11 +166,11 @@ function Index() {
 							{/* Title */}
 							<motion.h1
 								variants={fadeInUp}
-								className="mb-8 font-bold text-5xl leading-tight tracking-tight md:text-7xl lg:text-8xl"
+								className="mb-8 text-5xl font-semibold leading-tight tracking-tight md:text-7xl lg:text-8xl"
 							>
 								Simulate Molecules <br className="hidden md:block" />
 								<span className="relative inline-block">
-									<span className="bg-gradient-to-r from-blue-600 via-indigo-500 to-blue-600 bg-clip-text text-transparent animate-gradient-x">
+									<span className="text-gradient animate-gradient-x">
 										At Scale
 									</span>
 									<motion.svg
@@ -200,13 +183,13 @@ function Index() {
 									>
 										<path
 											d="M2 10C50 4 100 2 150 6C200 10 250 4 298 2"
-											stroke="url(#underline-gradient)"
+											stroke={`url(#${underlineId})`}
 											strokeWidth="4"
 											strokeLinecap="round"
 										/>
 										<defs>
 											<linearGradient
-												id="underline-gradient"
+												id={underlineId}
 												x1="0%"
 												y1="0%"
 												x2="100%"
@@ -225,8 +208,7 @@ function Index() {
 								variants={fadeInUp}
 								className="mb-12 max-w-2xl text-muted-foreground text-xl md:text-2xl leading-relaxed"
 							>
-								Run complex molecular simulations in the cloud with
-								unprecedented speed and accuracy.
+								Run complex molecular simulations in the cloud with speed and accuracy.
 								<span className="text-foreground font-medium">
 									{" "}
 									No expensive hardware required.
@@ -395,40 +377,6 @@ function Index() {
 				</div>
 			</section>
 
-			{/* Stats Section */}
-			<section className="relative border-y border-border/40 bg-muted/30 py-16 backdrop-blur-sm overflow-hidden">
-				<div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-transparent to-secondary/5" />
-				<div className="container relative mx-auto px-4">
-					<motion.div
-						initial="hidden"
-						whileInView="show"
-						viewport={{ once: true }}
-						variants={staggerContainer}
-						className="grid grid-cols-2 gap-6 md:grid-cols-4 md:gap-8"
-					>
-						{stats.map((stat, i) => (
-							<motion.div
-								key={i}
-								variants={fadeInUp}
-								className="group relative text-center p-6 rounded-2xl transition-all duration-500 hover:bg-card/50 hover:shadow-lg"
-							>
-								<div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-primary/0 to-primary/5 opacity-0 group-hover:opacity-100 transition-opacity" />
-								<div className="relative">
-									<div className="mb-3 mx-auto w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary transition-transform group-hover:scale-110 group-hover:bg-primary/20">
-										{stat.icon}
-									</div>
-									<h3 className="font-bold text-4xl md:text-5xl bg-gradient-to-r from-blue-600 via-indigo-500 to-cyan-500 bg-clip-text text-transparent mb-1">
-										{stat.value}
-									</h3>
-									<p className="text-muted-foreground text-sm md:text-base">
-										{stat.label}
-									</p>
-								</div>
-							</motion.div>
-						))}
-					</motion.div>
-				</div>
-			</section>
 
 			{/* Features Section */}
 			<section className="py-24 lg:py-32 relative">
@@ -467,7 +415,7 @@ function Index() {
 								className="group interactive-card rounded-3xl border border-border/50 bg-card/50 backdrop-blur-sm p-8 lg:p-10"
 							>
 								<div
-									className={`mb-8 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br ${feature.gradient} text-white shadow-lg transition-transform duration-300 group-hover:scale-110 group-hover:shadow-xl`}
+									className={`mb-8 inline-flex h-16 w-16 items-center justify-center rounded-2xl ${feature.accentClass} text-white shadow-lg transition-transform duration-300 group-hover:scale-110 group-hover:shadow-xl`}
 								>
 									{feature.icon}
 								</div>
@@ -485,7 +433,7 @@ function Index() {
 			{/* Visualizations Section */}
 			<section className="relative overflow-hidden py-24 lg:py-32">
 				{/* Background Elements */}
-				<div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-background to-secondary/5" />
+				<div className="absolute inset-0 mesh-gradient opacity-30 pointer-events-none" />
 				<div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-border to-transparent" />
 				<div className="absolute bottom-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-border to-transparent" />
 

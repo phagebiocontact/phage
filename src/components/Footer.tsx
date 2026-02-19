@@ -1,5 +1,5 @@
 "use client";
-import { Dna, Github, Linkedin, Mail, Twitter } from "lucide-react";
+import { Github, Linkedin, Mail, Twitter } from "lucide-react";
 import { motion } from "motion/react";
 import { NavLink } from "@/components/NavLink";
 
@@ -58,9 +58,10 @@ const item = {
 
 const Footer = () => {
 	return (
-		<footer className="relative border-t border-border/40 overflow-hidden">
+		<footer className="relative overflow-hidden border-t border-border/40">
 			{/* Background Effects */}
 			<div className="absolute inset-0 bg-gradient-to-b from-muted/20 to-background" />
+			<div className="quantum-grid absolute inset-0 opacity-20" />
 			<motion.div
 				animate={{
 					scale: [1, 1.2, 1],
@@ -103,9 +104,15 @@ const Footer = () => {
 								transition={{ duration: 0.7 }}
 								className="relative w-12 h-12 rounded-xl bg-gradient-primary p-2 shadow-lg"
 							>
-								<Dna className="w-full h-full text-white" />
+								<img
+									src="phagedesign.png"
+									alt="Phage Logo"
+									className="w-full h-full object-contain"
+								/>
 							</motion.div>
-							<span className="text-gradient font-bold text-2xl">Phage</span>
+							<span className="text-gradient font-display font-bold text-2xl">
+								Phage
+							</span>
 						</NavLink>
 						<p className="text-muted-foreground text-lg leading-relaxed max-w-sm">
 							Accelerating molecular discovery through advanced cloud-based
@@ -121,7 +128,7 @@ const Footer = () => {
 									rel="noreferrer"
 									whileHover={{ scale: 1.1, y: -3 }}
 									whileTap={{ scale: 0.95 }}
-									className="w-11 h-11 rounded-xl bg-muted/50 flex items-center justify-center text-muted-foreground transition-colors hover:bg-primary hover:text-white hover:shadow-glow-sm"
+									className="w-11 h-11 rounded-xl flex items-center justify-center text-muted-foreground transition-colors hover:text-primary"
 									aria-label={social.label}
 								>
 									{social.icon}

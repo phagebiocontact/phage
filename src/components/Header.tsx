@@ -62,18 +62,18 @@ const Header = () => {
 								className="object-contain scale-150"
 							/>
 						</motion.div>
-						<span className="text-gradient font-bold text-2xl tracking-tight">
+						<span className="text-gradient font-display font-bold text-2xl tracking-tight">
 							Phage
 						</span>
 					</NavLink>
 
 					{/* Desktop Nav */}
-					<div className="hidden items-center gap-1 md:flex">
+					<div className="hidden items-center gap-1 md:flex bg-background/40 backdrop-blur-xl rounded-full px-3 py-2 shadow-inner shadow-black/10 border border-border/30">
 						{navLinks.map((link) => (
 							<NavLink
 								key={link.href}
 								activeClassName="text-foreground bg-primary/10"
-								className="relative px-4 py-2 rounded-lg text-muted-foreground text-sm font-medium transition-colors hover:text-foreground hover:bg-muted/50"
+								className="relative rounded-full px-4 py-2 text-muted-foreground text-sm font-normal transition-colors hover:text-foreground hover:bg-muted/50"
 								href={link.href}
 							>
 								{link.label}
