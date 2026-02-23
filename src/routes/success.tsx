@@ -52,7 +52,7 @@ function SuccessPage() {
 	}, []);
 
 	return (
-		<div className="fusion-canvas min-h-screen bg-background flex flex-col items-center justify-center relative overflow-hidden px-4 py-20">
+		<div className="min-h-screen bg-background flex flex-col items-center justify-center relative overflow-hidden px-4 py-20">
 			{/* Premium Background Effects */}
 			<div className="absolute inset-0 mesh-gradient opacity-20 pointer-events-none" />
 			<motion.div
@@ -89,11 +89,10 @@ function SuccessPage() {
 							damping: 10,
 							delay: 0.2,
 						}}
-						className={`w-24 h-24 rounded-3xl flex items-center justify-center shadow-lg ${
-							isFailed
-								? "bg-gradient-to-br from-red-500 to-rose-600 shadow-[0_0_50px_rgba(239,68,68,0.3)]"
-								: "bg-gradient-to-br from-green-500 to-emerald-600 shadow-[0_0_50px_rgba(34,197,94,0.3)]"
-						}`}
+						className={`w-24 h-24 rounded-3xl flex items-center justify-center shadow-lg ${isFailed
+							? "bg-gradient-to-br from-red-500 to-rose-600 shadow-[0_0_50px_rgba(239,68,68,0.3)]"
+							: "bg-gradient-to-br from-green-500 to-emerald-600 shadow-[0_0_50px_rgba(34,197,94,0.3)]"
+							}`}
 					>
 						{isFailed ? (
 							<XCircle className="w-12 h-12 text-white" />
@@ -147,7 +146,7 @@ function SuccessPage() {
 				<div className="grid md:grid-cols-2 gap-6 mb-12">
 					<motion.div variants={fadeInUp}>
 						<Card
-							className={`h-full bg-card/40 backdrop-blur-xl border-primary/20 overflow-hidden group hover:border-primary/40 transition-all duration-300 ${isFailed ? "opacity-50" : ""}`}
+							className={`h-full bg-background/30 backdrop-blur-sm border-primary/20 overflow-hidden group hover:border-primary/40 transition-all duration-300 ${isFailed ? "opacity-50" : ""}`}
 						>
 							<CardContent className="p-8">
 								<div className="flex items-start gap-4 text-left">
@@ -171,7 +170,7 @@ function SuccessPage() {
 					</motion.div>
 
 					<motion.div variants={fadeInUp}>
-						<Card className="h-full bg-card/40 backdrop-blur-xl border-secondary/20 overflow-hidden group hover:border-secondary/40 transition-all duration-300">
+						<Card className="h-full bg-background/30 backdrop-blur-sm border-secondary/20 overflow-hidden group hover:border-secondary/40 transition-all duration-300">
 							<CardContent className="p-8">
 								<div className="flex items-start gap-4 text-left">
 									<div className="w-12 h-12 rounded-2xl bg-secondary/10 flex items-center justify-center text-secondary shrink-0 group-hover:scale-110 transition-transform">

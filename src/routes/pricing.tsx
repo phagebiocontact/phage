@@ -234,7 +234,7 @@ const PricingContentInner = ({ user }: { user: any }) => {
 			<section className="py-12 relative">
 				<div className="container mx-auto px-4">
 					<div className="mx-auto max-w-4xl">
-						<Card className="relative border-primary/20 bg-gradient-to-br from-card via-card to-card/80 shadow-xl backdrop-blur-sm overflow-hidden">
+						<Card className="relative border-primary/20 bg-background/30 backdrop-blur-sm shadow-xl overflow-hidden">
 							{/* Card Background Effects */}
 							<div className="absolute top-0 right-0 w-64 h-64 bg-primary/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
 							<div className="absolute bottom-0 left-0 w-48 h-48 bg-secondary/10 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2" />
@@ -467,7 +467,7 @@ const PricingContentInner = ({ user }: { user: any }) => {
 						<Accordion className="space-y-4" collapsible type="single">
 							{faqs.map((faq, index) => (
 								<AccordionItem
-									className="group rounded-2xl border border-border/40 bg-card/50 backdrop-blur-sm px-6 transition-all duration-300 hover:border-primary/30 hover:bg-card/80"
+									className="group rounded-2xl border border-border/30 bg-background/30 backdrop-blur-sm px-6 transition-all duration-300 hover:border-primary/30"
 									key={index}
 									value={`item-${index}`}
 								>
@@ -486,7 +486,7 @@ const PricingContentInner = ({ user }: { user: any }) => {
 
 			{/* CTA Section */}
 			<section className="py-24 relative overflow-hidden">
-				<div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-background to-secondary/5" />
+				<div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-border to-transparent" />
 				<div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/10 rounded-full blur-3xl animate-pulse" />
 				<div className="container relative mx-auto px-4 text-center">
 					<div className="mx-auto max-w-3xl space-y-8">

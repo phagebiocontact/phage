@@ -1,449 +1,860 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useAction, useMutation, useQuery } from "convex/react";
+import JSZip from "jszip";
+import { useAction, useQuery } from "convex/react";
 import {
-	Activity,
-	ChevronLeft,
-	Clock,
-	Download,
-	Info,
-	RefreshCw,
-	Settings2,
+  Activity,
+  AlertTriangle,
+  ChevronDown,
+  ChevronLeft,
+  ChevronUp,
+  Clock,
+  Download,
+  FileText,
+  FlaskConical,
+  Monitor,
+  RefreshCw,
+  Settings2,
+  Terminal,
+  Wifi,
+  WifiOff,
+  Zap,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
+import { LogViewer } from "@/components/LogViewer";
+import { useSimulationWs } from "@/hooks/useSimulationWs";
 import type { MolstarViewerRef } from "@/components/MolstarViewer";
 import MolstarViewer from "@/components/MolstarViewer";
+import type { SimulationAnalysisData } from "@/components/SimulationCharts";
 import { SimulationCharts } from "@/components/SimulationCharts";
-import { Badge } from "@/components/ui/badge";
+import { TimelineControls } from "@/components/TimelineControls";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 
 export const Route = createFileRoute("/results/$id")({
-	component: Results,
+  component: Results,
 });
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+type SimulationStatus = "pending" | "queued" | "running" | "completed" | "failed" | "canceled";
+
+const STATUS_CONFIG: Record<SimulationStatus, { color: string; dot: string; label: string }> = {
+  pending: { color: "text-amber-400", dot: "bg-amber-400", label: "Pending" },
+  queued: { color: "text-blue-400", dot: "bg-blue-400", label: "Queued" },
+  running: { color: "text-primary", dot: "bg-primary animate-pulse", label: "Running" },
+  completed: { color: "text-emerald-400", dot: "bg-emerald-400", label: "Completed" },
+  failed: { color: "text-red-400", dot: "bg-red-400", label: "Failed" },
+  canceled: { color: "text-gray-400", dot: "bg-gray-400", label: "Canceled" },
+};
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 function Results() {
-	const { id } = Route.useParams();
-	const navigate = useNavigate();
-	const simulation = useQuery(api.simulations.getSimulation, {
-		id: id as Id<"simulations">,
-	});
-	const checkStatus = useAction(api.actions.checkJobStatus);
-	const getDownloadUrl = useMutation(api.results.getResultsDownloadUrl);
-	const [isRefreshing, setIsRefreshing] = useState(false);
-	const [representation, setRepresentation] = useState<
-		"cartoon" | "ball-and-stick" | "surface"
-	>("cartoon");
-	const [_colorScheme, setColorScheme] = useState<
-		"chain" | "element" | "rainbow"
-	>("chain");
-	const molstarRef = useRef<MolstarViewerRef>(null);
+  const { id } = Route.useParams();
+  const navigate = useNavigate();
+  const simulation = useQuery(api.simulations.getSimulation, { id: id as Id<"simulations"> });
+  const checkStatus = useAction(api.actions.checkJobStatus);
 
-	// Show toast on error
-	useEffect(() => {
-		if (simulation?.error) {
-			toast.error("Simulation Error", {
-				description: "Something went wrong while processing your simulation.",
-			});
-		}
-	}, [simulation?.error]);
+  // WS only while job is non-terminal — after completion Modal container stops
+  const isTerminalStatus = ["completed", "failed", "canceled"].includes(simulation?.status ?? "");
+  const { wsStatus, liveLogsText, wsConnected, liveStructureUrl } = useSimulationWs({
+    modalJobId: (simulation as { modalJobId?: string })?.modalJobId,
+    enabled: !isTerminalStatus && !!simulation,
+  });
 
-	const handleRefresh = async () => {
-		setIsRefreshing(true);
-		try {
-			await checkStatus({ simulationId: id as Id<"simulations"> });
-			toast.success("Status updated");
-		} catch (error) {
-			console.error("Error refreshing status:", error);
-			toast.error("Failed to refresh status");
-		} finally {
-			setIsRefreshing(false);
-		}
-	};
+  // Viewer state
+  const molstarRef = useRef<MolstarViewerRef>(null);
+  const [representation, setRepresentation] = useState<"cartoon" | "ball-and-stick" | "surface">("cartoon");
+  const [currentFrame, setCurrentFrame] = useState(0);
+  const [totalFrames, setTotalFrames] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [syncEnabled, setSyncEnabled] = useState(true);
 
-	const handleDownload = async () => {
-		if (!simulation?.resultStorageId) {
-			toast.error("Results not available yet");
-			return;
-		}
-		try {
-			const url = await getDownloadUrl({
-				storageId: simulation.resultStorageId,
-			});
-			if (url) {
-				window.open(url, "_blank");
-			}
-		} catch (error) {
-			console.error("Error downloading results:", error);
-			toast.error("Failed to download results");
-		}
-	};
+  // UI state
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [errorExpanded, setErrorExpanded] = useState(false);
 
-	const handleRepresentationChange = (
-		type: "cartoon" | "ball-and-stick" | "surface",
-	) => {
-		setRepresentation(type);
-		molstarRef.current?.setRepresentation(type);
-	};
+  // Artifact URL resolution — typed via Convex schema artifacts field
+  type SimArtifacts = {
+    structurePdb?: string;
+    trajectoryXtc?: string;
+    resultTar?: string;
+    rmsdPng?: string;
+    rmsfPng?: string;
+    rgPng?: string;
+    ssPng?: string;
+    energyPng?: string;
+  };
+  type SimData = {
+    _id: string;
+    name: string;
+    status: string;
+    parameters: { temperature: number; duration: number; timestep: number; ensemble: string };
+    creditsReserved: number;
+    creditsCaptured?: number;
+    progressPercent?: number;
+    currentStep?: string;
+    timeElapsedSeconds?: number;
+    artifacts?: SimArtifacts;
+    analysisData?: { rmsd?: unknown[]; rmsf?: unknown[]; rg?: unknown[]; energy?: unknown[]; ss?: unknown[] };
+    errorSummary?: string;
+    errorRaw?: string;
+    logTail?: string;
+  };
+  const sim = simulation as SimData | null;
+  const artifacts = sim?.artifacts;
 
-	const _handleColorChange = (color: "chain" | "element" | "rainbow") => {
-		setColorScheme(color);
-		molstarRef.current?.setColor(color);
-	};
+  // Get URL queries for viewer files
+  const structureUrl = useQuery(
+    api.simulations.getArtifactUrl,
+    artifacts?.structurePdb && simulation
+      ? { simulationId: simulation._id, storageId: artifacts.structurePdb }
+      : "skip"
+  );
+  const trajectoryUrl = useQuery(
+    api.simulations.getArtifactUrl,
+    artifacts?.trajectoryXtc && simulation
+      ? { simulationId: simulation._id, storageId: artifacts.trajectoryXtc }
+      : "skip"
+  );
 
-	if (!simulation) {
-		return (
-			<div className="fusion-canvas min-h-screen bg-background flex items-center justify-center">
-				<Card className="border-border/40 bg-card/50 backdrop-blur-sm p-12">
-					<p className="text-muted-foreground">Loading simulation...</p>
-				</Card>
-			</div>
-		);
-	}
+  // Build analysis data: for completed sims use Convex (reactive), during run use WS partial data
+  const wsAnalysis = wsStatus?.analysis_data as Record<string, unknown> | undefined;
+  const analysisData: SimulationAnalysisData = {
+    rmsd: (sim?.analysisData?.rmsd ?? wsAnalysis?.rmsd) as SimulationAnalysisData["rmsd"],
+    rmsf: (sim?.analysisData?.rmsf ?? wsAnalysis?.rmsf) as SimulationAnalysisData["rmsf"],
+    rg: (sim?.analysisData?.rg ?? wsAnalysis?.radiusOfGyration) as SimulationAnalysisData["rg"],
+    energy: sim?.analysisData?.energy as SimulationAnalysisData["energy"],
+    ss: sim?.analysisData?.ss as SimulationAnalysisData["ss"],
+  };
+  const hasLiveAnalysis = !!wsAnalysis && Object.keys(wsAnalysis).length > 0;
 
-	const statusColors = {
-		pending: "bg-yellow-500",
-		queued: "bg-secondary",
-		running: "bg-primary",
-		completed: "bg-green-500",
-		failed: "bg-red-500",
-	};
+  // Live progress values: WS data while running, Convex data otherwise
+  const liveProgress = wsStatus?.progress_percent ?? simulation?.progressPercent ?? 0;
+  const liveStep = wsStatus?.current_step ?? simulation?.currentStep;
+  const liveElapsed = wsStatus?.time_elapsed_seconds ?? simulation?.timeElapsedSeconds;
+  const liveSpeed = wsStatus?.speed_ns_per_day;
 
-	// Use live analysis data from simulation
-	const analysisData = {
-		rmsd: simulation.analysisData?.rmsd || [],
-		rmsf: simulation.analysisData?.rmsf || [],
-		energy: [],
-		radiusOfGyration: simulation.analysisData?.radiusOfGyration || [],
-		sasa: simulation.analysisData?.sasa || [],
-	};
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await checkStatus({ simulationId: id as Id<"simulations"> });
+      toast.success("Status refreshed");
+    } catch {
+      toast.error("Refresh failed");
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
-	return (
-		<div className="fusion-canvas min-h-screen bg-background">
-			<section className="pt-32 pb-12">
-				<div className="container mx-auto px-4">
-					<div className="mx-auto max-w-6xl">
-						<div className="mb-8 flex items-center justify-between">
-							<div>
-								<Button
-									variant="ghost"
-									onClick={() => navigate({ to: "/jobs" })}
-									className="mb-4"
-								>
-									<ChevronLeft className="mr-2 h-4 w-4" />
-									Back to Jobs
-								</Button>
-								<h1 className="mb-2 font-bold text-4xl">{simulation.name}</h1>
-								<div className="flex items-center gap-2">
-									<div
-										className={`h-3 w-3 rounded-full ${statusColors[simulation.status as keyof typeof statusColors]}`}
-									/>
-									<span className="text-muted-foreground capitalize">
-										{simulation.status}
-									</span>
-								</div>
-							</div>
-							<div className="flex gap-2">
-								<Button
-									onClick={handleRefresh}
-									disabled={isRefreshing || simulation.status === "completed"}
-									variant="outline"
-								>
-									<RefreshCw
-										className={`mr-2 h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`}
-									/>
-									Refresh Status
-								</Button>
-								{simulation.status === "completed" && (
-									<Button
-										onClick={handleDownload}
-										className="bg-gradient-primary"
-									>
-										<Download className="mr-2 h-4 w-4" />
-										Download Results
-									</Button>
-								)}
-							</div>
-						</div>
+  const handleFrameChange = useCallback((frame: number, total: number) => {
+    setCurrentFrame(frame);
+    if (total > 0) setTotalFrames(total);
+  }, []);
 
-						{/* Main Content Grid */}
-						<div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-							{/* Left Column - Progress & Info */}
-							<div className="lg:col-span-1 space-y-6">
-								<motion.div
-									initial={{ opacity: 0, x: -20 }}
-									animate={{ opacity: 1, x: 0 }}
-									transition={{ duration: 0.5, delay: 0.1 }}
-								>
-									<Card className="border-border/40 bg-card/50 backdrop-blur-xl overflow-hidden relative">
-										<div className="absolute top-0 left-0 w-1 h-full bg-gradient-primary" />
-										<CardHeader className="pb-2">
-											<div className="flex items-center gap-2 text-primary">
-												<Activity className="h-4 w-4" />
-												<CardTitle className="text-sm font-medium uppercase tracking-wider">
-													Status
-												</CardTitle>
-											</div>
-										</CardHeader>
-										<CardContent className="space-y-6">
-											<div className="space-y-2">
-												<div className="flex justify-between items-end">
-													<div className="space-y-1">
-														<p className="text-2xl font-bold">
-															{simulation.progressPercent || 0}%
-														</p>
-														<p className="text-xs text-muted-foreground font-medium uppercase">
-															{simulation.currentStep || "Processing"}
-														</p>
-													</div>
-													<Badge
-														variant="secondary"
-														className={`${statusColors[simulation.status as keyof typeof statusColors]} bg-opacity-20 text-white border-none`}
-													>
-														{simulation.status}
-													</Badge>
-												</div>
-												<Progress
-													value={simulation.progressPercent || 0}
-													className="h-2 bg-primary/10"
-												/>
-											</div>
+  const handleTimelineFrame = useCallback((frame: number) => {
+    setCurrentFrame(frame);
+    molstarRef.current?.setFrame(frame);
+  }, []);
 
-											<div className="grid grid-cols-2 gap-4 pt-4 border-t border-border/40">
-												<div className="space-y-1">
-													<div className="flex items-center gap-1.5 text-muted-foreground">
-														<Clock className="h-3.5 w-3.5" />
-														<span className="text-[10px] uppercase font-bold tracking-tight">
-															Duration
-														</span>
-													</div>
-													<p className="text-sm font-semibold">
-														{simulation.timeElapsedSeconds
-															? `${Math.floor(simulation.timeElapsedSeconds)}s`
-															: "0s"}
-													</p>
-												</div>
-												<div className="space-y-1">
-													<div className="flex items-center gap-1.5 text-muted-foreground">
-														<Settings2 className="h-3.5 w-3.5" />
-														<span className="text-[10px] uppercase font-bold tracking-tight">
-															Target
-														</span>
-													</div>
-													<p className="text-sm font-semibold">
-														{simulation.parameters.duration}ns
-													</p>
-												</div>
-											</div>
+  const handlePlay = useCallback(() => {
+    setIsPlaying(true);
+    molstarRef.current?.play();
+  }, []);
 
-											<AnimatePresence>
-												{simulation.error && (
-													<motion.div
-														initial={{ opacity: 0, height: 0 }}
-														animate={{ opacity: 1, height: "auto" }}
-														exit={{ opacity: 0, height: 0 }}
-														className="pt-4 mt-4 border-t border-red-500/20"
-													>
-														<div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl space-y-3">
-															<div className="flex gap-2 text-red-500">
-																<Info className="h-4 w-4 shrink-0" />
-																<p className="text-xs font-semibold leading-tight">
-																	Simulation encountered an issue.
-																</p>
-															</div>
-															<Button
-																size="sm"
-																variant="destructive"
-																className="w-full text-[10px] h-8 font-bold uppercase tracking-wider bg-red-500 hover:bg-red-600"
-																onClick={() => {
-																	toast.info("Redirecting to support...");
-																	navigate({ to: "/contact" });
-																}}
-															>
-																Open Ticket
-															</Button>
-														</div>
-													</motion.div>
-												)}
-											</AnimatePresence>
-										</CardContent>
-									</Card>
-								</motion.div>
+  const handlePause = useCallback(() => {
+    setIsPlaying(false);
+    molstarRef.current?.pause();
+  }, []);
 
-								<motion.div
-									initial={{ opacity: 0, x: -20 }}
-									animate={{ opacity: 1, x: 0 }}
-									transition={{ duration: 0.5, delay: 0.2 }}
-								>
-									<Card className="border-border/40 bg-card/50 backdrop-blur-xl">
-										<CardHeader className="pb-2">
-											<CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-												Parameters
-											</CardTitle>
-										</CardHeader>
-										<CardContent>
-											<div className="space-y-4">
-												{[
-													{
-														label: "Temperature",
-														value: `${simulation.parameters.temperature} K`,
-													},
-													{
-														label: "Timestep",
-														value: `${simulation.parameters.timestep} fs`,
-													},
-													{
-														label: "Ensemble",
-														value: simulation.parameters.ensemble,
-													},
-												].map((item, i) => (
-													<div
-														key={i}
-														className="flex justify-between items-center py-2 border-b border-border/20 last:border-0"
-													>
-														<span className="text-xs text-muted-foreground">
-															{item.label}
-														</span>
-														<span className="text-xs font-mono font-bold">
-															{item.value}
-														</span>
-													</div>
-												))}
-											</div>
-										</CardContent>
-									</Card>
-								</motion.div>
-							</div>
+  const handleChartFrameSelect = useCallback(
+    (frame: number) => {
+      if (!syncEnabled) return;
+      setCurrentFrame(frame);
+      molstarRef.current?.setFrame(frame);
+    },
+    [syncEnabled]
+  );
 
-							{/* Right Column - Visualization & Data */}
-							<div className="lg:col-span-2">
-								<AnimatePresence mode="wait">
-									{simulation.status === "completed" ? (
-										<motion.div
-											key="completed"
-											initial={{ opacity: 0, y: 20 }}
-											animate={{ opacity: 1, y: 0 }}
-											className="space-y-6"
-										>
-											<Card className="border-border/40 bg-card/50 backdrop-blur-xl overflow-hidden">
-												<CardHeader className="border-b border-border/20 pb-4">
-													<div className="flex flex-wrap items-center justify-between gap-4">
-														<CardTitle className="text-lg font-bold">
-															Molecular View
-														</CardTitle>
-														<div className="flex gap-2 bg-background/50 p-1 rounded-lg border border-border/40 scale-90 sm:scale-100">
-															{["cartoon", "ball-and-stick", "surface"].map(
-																(type) => (
-																	<Button
-																		key={type}
-																		size="sm"
-																		variant={
-																			representation === type
-																				? "default"
-																				: "ghost"
-																		}
-																		onClick={() =>
-																			handleRepresentationChange(type as any)
-																		}
-																		className="h-8 px-3 text-[10px] font-bold uppercase tracking-wider"
-																	>
-																		{type.replace("-", " ")}
-																	</Button>
-																),
-															)}
-														</div>
-													</div>
-												</CardHeader>
-												<CardContent className="p-0">
-													<div className="h-[500px] relative group">
-														<MolstarViewer
-															ref={molstarRef}
-															pdbId="1crn"
-															className="w-full h-full"
-														/>
-														<div className="absolute bottom-4 left-4 right-4 p-3 bg-black/60 backdrop-blur-md rounded-lg border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity">
-															<p className="text-[10px] text-white/80 text-center leading-relaxed">
-																Interactive 3D viewport. Use mouse to rotate,
-																scroll to zoom. Currently showing demo structure
-																(1CRN).
-															</p>
-														</div>
-													</div>
-												</CardContent>
-											</Card>
-										</motion.div>
-									) : simulation.status === "failed" ? (
-										<motion.div
-											key="failed"
-											initial={{ opacity: 0 }}
-											animate={{ opacity: 1 }}
-											className="h-full min-h-[400px]"
-										>
-											<Card className="h-full border-red-500/20 bg-red-500/5 backdrop-blur-xl flex flex-col items-center justify-center p-12 text-center border-dashed">
-												<div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mb-6">
-													<Info className="h-6 w-6 text-red-500" />
-												</div>
-												<h3 className="text-xl font-bold mb-2 text-red-500">
-													Simulation Failed
-												</h3>
-												<p className="text-sm text-muted-foreground max-w-sm">
-													We encountered an error while processing your request.
-													Please check the status details or contact support for
-													assistance.
-												</p>
-											</Card>
-										</motion.div>
-									) : (
-										<motion.div
-											key="awaiting"
-											initial={{ opacity: 0 }}
-											animate={{ opacity: 1 }}
-											className="h-full min-h-[400px]"
-										>
-											<Card className="h-full border-border/40 bg-card/50 backdrop-blur-xl flex flex-col items-center justify-center p-12 text-center border-dashed">
-												<div className="w-16 h-16 rounded-full bg-primary/5 flex items-center justify-center mb-6 relative">
-													<div className="absolute inset-0 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
-													<Activity className="h-6 w-6 text-primary" />
-												</div>
-												<h3 className="text-xl font-bold mb-2">
-													Awaiting Simulation Completion
-												</h3>
-												<p className="text-sm text-muted-foreground max-w-sm">
-													Interactive visualization and detailed analysis will
-													become available once the current compute job
-													finishes.
-												</p>
-											</Card>
-										</motion.div>
-									)}
-								</AnimatePresence>
-							</div>
-						</div>
+  const handleRepresentationChange = (type: "cartoon" | "ball-and-stick" | "surface") => {
+    setRepresentation(type);
+    molstarRef.current?.setRepresentation(type);
+  };
 
-						{simulation.status === "completed" && (
-							<motion.div
-								initial={{ opacity: 0, y: 20 }}
-								animate={{ opacity: 1, y: 0 }}
-								transition={{ delay: 0.3 }}
-								className="mt-6"
-							>
-								<Card className="border-border/40 bg-card/50 backdrop-blur-xl">
-									<CardHeader>
-										<CardTitle>Trajectory Analysis</CardTitle>
-									</CardHeader>
-									<CardContent>
-										<SimulationCharts data={analysisData} />
-									</CardContent>
-								</Card>
-							</motion.div>
-						)}
-					</div>
-				</div>
-			</section>
-		</div>
-	);
+  const downloadArtifact = async (storageId: Id<"_storage">, filename: string) => {
+    if (!simulation) return;
+    try {
+      // We don't have a direct download mutation here; use the Convex URL query pattern
+      // We'll make a simple fetch from the signed URL
+      toast.info("Preparing download...");
+      const convexUrl = (await import("@/lib/convex")).convex;
+      const { api: convexApi } = await import("../../convex/_generated/api");
+      const url = await convexUrl.mutation(convexApi.results.getResultsDownloadUrl, {
+        storageId,
+      });
+      if (url) {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.click();
+      }
+    } catch {
+      toast.error("Download failed");
+    }
+  };
+
+  const handleDownloadPng = async (metric: "rmsd" | "rmsf" | "rg" | "ss" | "energy") => {
+    const keyMap: Record<string, string> = {
+      rmsd: "rmsdPng",
+      rmsf: "rmsfPng",
+      rg: "rgPng",
+      ss: "ssPng",
+      energy: "energyPng",
+    };
+    const storageId = artifacts?.[keyMap[metric]];
+    if (!storageId) {
+      toast.error(`${metric.toUpperCase()} PNG not available`);
+      return;
+    }
+    await downloadArtifact(storageId, `${metric}.png`);
+  };
+
+  const handleDownloadTar = async () => {
+    if (!artifacts) {
+      toast.error("Results archive not available yet");
+      return;
+    }
+    toast.info("Preparing results archive...");
+    try {
+      const zip = new JSZip();
+      const convexUrl = (await import("@/lib/convex")).convex;
+      const { api: convexApi } = await import("../../convex/_generated/api");
+
+      const filePromises = Object.entries(artifacts).map(async ([key, storageId]) => {
+        if (!storageId || key === "resultTar") return;
+        const url = await convexUrl.mutation(convexApi.results.getResultsDownloadUrl, {
+          storageId: storageId as Id<"_storage">,
+        });
+        if (url) {
+          const res = await fetch(url);
+          const blob = await res.blob();
+          let filename = key;
+          if (key === "structurePdb") filename = "complex.pdb";
+          else if (key === "trajectoryXtc") filename = "prod.xtc";
+          else if (key === "simulationLog") filename = "simulation.log";
+          else if (key.endsWith("Csv")) filename = key.replace("Csv", ".csv");
+          else if (key.endsWith("Png")) filename = key.replace("Png", ".png");
+          zip.file(filename, blob);
+        }
+      });
+
+      await Promise.all(filePromises);
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(zipBlob);
+      a.download = "results.zip";
+      a.click();
+      toast.success("Results downloaded");
+    } catch {
+      toast.error("Download failed");
+    }
+  };
+
+  // Loading state
+  if (simulation === undefined) {
+    return (
+      <div className="fusion-canvas min-h-screen bg-background flex items-center justify-center">
+        <div className="space-y-4 text-center">
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-primary/30 border-t-primary mx-auto" />
+          <p className="text-muted-foreground text-sm">Loading simulation...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!simulation) {
+    return (
+      <div className="fusion-canvas min-h-screen bg-background flex items-center justify-center">
+        <Card className="border-border/40 bg-card/50 backdrop-blur-sm p-12 text-center">
+          <AlertTriangle className="h-10 w-10 text-red-400 mx-auto mb-4" />
+          <h2 className="text-xl font-bold mb-2">Simulation Not Found</h2>
+          <p className="text-muted-foreground mb-6">This simulation doesn't exist or you don't have access.</p>
+          <Button onClick={() => navigate({ to: "/jobs" })}>Back to Jobs</Button>
+        </Card>
+      </div>
+    );
+  }
+
+  // Use Convex status as source of truth (WS only supplements during run)
+  const status = simulation.status as SimulationStatus;
+  const statusConfig = STATUS_CONFIG[status] ?? STATUS_CONFIG.pending;
+  const isTerminal = ["completed", "failed", "canceled"].includes(status);
+  const isCompleted = status === "completed";
+  const isFailed = status === "failed";
+
+  return (
+    <div className="fusion-canvas min-h-screen bg-background">
+      <section className="pt-28 pb-16">
+        <div className="container mx-auto px-4 max-w-7xl">
+          {/* ── Header ── */}
+          <motion.div
+            initial={{ opacity: 0, y: -16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+            className="mb-6"
+          >
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate({ to: "/jobs" })}
+              className="mb-3 -ml-1 text-muted-foreground hover:text-foreground"
+            >
+              <ChevronLeft className="h-4 w-4 mr-1" />
+              Back to Jobs
+            </Button>
+
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h1 className="text-3xl font-bold mb-1">{simulation.name}</h1>
+                <div className="flex items-center gap-2">
+                  <span className={`h-2 w-2 rounded-full ${statusConfig.dot}`} />
+                  <span className={`text-sm font-medium ${statusConfig.color}`}>
+                    {statusConfig.label}
+                  </span>
+                  {simulation.currentStep && (
+                    <>
+                      <span className="text-muted-foreground/50">·</span>
+                      <span className="text-sm text-muted-foreground">{simulation.currentStep}</span>
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="flex gap-2 flex-wrap items-center">
+                {/* Live connection indicator — only relevant while running */}
+                {!isTerminal && (
+                  <span className={`flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full border ${
+                    wsConnected
+                      ? "text-emerald-400 border-emerald-400/30 bg-emerald-400/5"
+                      : "text-muted-foreground border-border/30"
+                  }`}>
+                    {wsConnected
+                      ? <><Wifi className="h-3 w-3" /> Live</>  
+                      : <><WifiOff className="h-3 w-3" /> Polling</>}
+                  </span>
+                )}
+                {!isTerminal && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRefresh}
+                    disabled={isRefreshing}
+                    className="gap-2"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
+                    Refresh
+                  </Button>
+                )}
+                {isCompleted && (
+                  <Button
+                    size="sm"
+                    className="bg-gradient-primary gap-2"
+                    onClick={handleDownloadTar}
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Download Results
+                  </Button>
+                )}
+              </div>
+            </div>
+          </motion.div>
+
+          {/* ── Progress Bar (running/queued) ── */}
+          <AnimatePresence>
+            {!isTerminal && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mb-6"
+              >
+                <Card className="border-border/40 bg-card/50 backdrop-blur-xl overflow-hidden">
+                  <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-primary" />
+                  <CardContent className="p-5">
+                    <div className="flex items-end justify-between mb-3">
+                      <div className="flex items-center gap-2 text-primary">
+                        <Activity className="h-4 w-4" />
+                        <span className="text-sm font-semibold uppercase tracking-wide">
+                          {liveStep ?? "Simulation Progress"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {liveSpeed != null && liveSpeed > 0 && (
+                          <span className="flex items-center gap-1 text-xs text-primary/70 font-mono">
+                            <Zap className="h-3 w-3" />
+                            {liveSpeed.toFixed(1)} ns/day
+                          </span>
+                        )}
+                        <span className="text-2xl font-bold tabular-nums">
+                          {Math.round(liveProgress)}%
+                        </span>
+                      </div>
+                    </div>
+                    {/* Animated gradient progress bar */}
+                    <div className="relative h-3 rounded-full bg-primary/10 overflow-hidden">
+                      <div
+                        className="absolute inset-y-0 left-0 rounded-full transition-all duration-700"
+                        style={{
+                          width: `${liveProgress}%`,
+                          background: "linear-gradient(90deg, hsl(var(--primary)) 0%, hsl(265 90% 70%) 100%)",
+                          boxShadow: "0 0 12px hsl(var(--primary) / 0.5)",
+                        }}
+                      />
+                      {/* Shimmer animation */}
+                      {!isTerminal && (
+                        <div
+                          className="absolute inset-y-0 w-20 animate-shimmer"
+                          style={{
+                            background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent)",
+                            left: `${(liveProgress - 10)}%`,
+                          }}
+                        />
+                      )}
+                    </div>
+                    <div className="flex gap-6 mt-3 text-xs text-muted-foreground flex-wrap">
+                      {liveElapsed != null && (
+                        <span className="flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          {Math.floor(liveElapsed)}s elapsed
+                        </span>
+                      )}
+                      <span className="flex items-center gap-1">
+                        <Settings2 className="h-3 w-3" />
+                        Target: {simulation.parameters.duration}ns
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* ── Failed Error Card ── */}
+          <AnimatePresence>
+            {isFailed && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="mb-6"
+              >
+                <Card className="border-red-500/30 bg-red-500/5 backdrop-blur-xl overflow-hidden">
+                  <div className="absolute inset-x-0 top-0 h-0.5 bg-red-500" />
+                  <CardContent className="p-5">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-red-400 mb-1">Simulation Failed</p>
+                        <p className="text-sm text-muted-foreground">
+                          {sim?.errorSummary ??
+                            "The simulation encountered an error during processing."}
+                        </p>
+                        {sim?.errorRaw && (
+                          <button
+                            type="button"
+                            className="flex items-center gap-1 mt-3 text-xs text-red-400/70 hover:text-red-400 transition-colors"
+                            onClick={() => setErrorExpanded((v) => !v)}
+                          >
+                            {errorExpanded ? (
+                              <ChevronUp className="h-3 w-3" />
+                            ) : (
+                              <ChevronDown className="h-3 w-3" />
+                            )}
+                            {errorExpanded ? "Hide" : "Show"} technical details
+                          </button>
+                        )}
+                        <AnimatePresence>
+                          {errorExpanded && sim?.errorRaw && (
+                            <motion.pre
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: "auto", opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              className="mt-3 p-3 bg-black/40 rounded-lg text-xs text-red-300/80 font-mono overflow-auto max-h-48 whitespace-pre-wrap"
+                            >
+                              {sim.errorRaw}
+                            </motion.pre>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* ── Main Content ── */}
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            {/* Left sidebar: parameters */}
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.4, delay: 0.1 }}
+              className="lg:col-span-1 space-y-4"
+            >
+              <Card className="border-border/40 bg-card/50 backdrop-blur-xl">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground">
+                    Parameters
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <dl className="space-y-3 text-sm">
+                    {[
+                      { label: "Temperature", value: `${simulation.parameters.temperature} K` },
+                      { label: "Duration", value: `${simulation.parameters.duration} ns` },
+                      { label: "Timestep", value: `${simulation.parameters.timestep} fs` },
+                      { label: "Ensemble", value: simulation.parameters.ensemble },
+                      {
+                        label: "Credits Reserved",
+                        value: `${simulation.creditsReserved}`,
+                      },
+                      ...(simulation.creditsCaptured != null
+                        ? [{ label: "Credits Used", value: `${simulation.creditsCaptured}` }]
+                        : []),
+                    ].map(({ label, value }) => (
+                      <div key={label} className="flex justify-between items-center py-1.5 border-b border-border/20 last:border-0">
+                        <dt className="text-xs text-muted-foreground">{label}</dt>
+                        <dd className="text-xs font-mono font-semibold">{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            {/* Right content area */}
+            <motion.div
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.4, delay: 0.15 }}
+              className="lg:col-span-3"
+            >
+              {isCompleted ? (
+                <Tabs defaultValue="trajectory" className="w-full">
+                  <TabsList className="grid w-full grid-cols-4 mb-6">
+                    <TabsTrigger value="trajectory" className="gap-2">
+                      <Monitor className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Trajectory</span>
+                    </TabsTrigger>
+                    <TabsTrigger value="analysis" className="gap-2">
+                      <FlaskConical className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Analysis</span>
+                    </TabsTrigger>
+                    <TabsTrigger value="logs" className="gap-2">
+                      <FileText className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Logs</span>
+                    </TabsTrigger>
+                    <TabsTrigger value="downloads" className="gap-2">
+                      <Download className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Downloads</span>
+                    </TabsTrigger>
+                  </TabsList>
+
+                  {/* Trajectory Tab */}
+                  <TabsContent value="trajectory">
+                    <Card className="border-border/40 bg-card/50 backdrop-blur-xl overflow-hidden">
+                      <CardHeader className="border-b border-border/20 py-3 px-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <CardTitle className="text-base">Molecular Dynamics Trajectory</CardTitle>
+                          <div className="flex gap-2 items-center">
+                            <div className="flex gap-1 bg-background/50 p-1 rounded-lg border border-border/40">
+                              {(["cartoon", "ball-and-stick", "surface"] as const).map((type) => (
+                                <Button
+                                  key={type}
+                                  size="sm"
+                                  variant={representation === type ? "default" : "ghost"}
+                                  onClick={() => handleRepresentationChange(type)}
+                                  className="h-7 px-2.5 text-[10px] font-bold uppercase tracking-wider"
+                                >
+                                  {type.replace("-", " ")}
+                                </Button>
+                              ))}
+                            </div>
+                            {totalFrames > 1 && (
+                              <Button
+                                size="sm"
+                                variant={syncEnabled ? "default" : "outline"}
+                                onClick={() => setSyncEnabled((v) => !v)}
+                                className="h-7 px-2.5 text-[10px] gap-1.5"
+                              >
+                                <Zap className="h-3 w-3" />
+                                Sync
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="p-0">
+                        <div className="h-[520px] relative">
+                          <MolstarViewer
+                            ref={molstarRef}
+                            structureUrl={structureUrl ?? undefined}
+                            trajectoryUrl={trajectoryUrl ?? undefined}
+                            className="w-full h-full"
+                            onFrameChange={handleFrameChange}
+                          />
+                          {!structureUrl && !trajectoryUrl && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                              <div className="text-center text-white/60 space-y-2">
+                                <RefreshCw className="h-8 w-8 animate-spin mx-auto opacity-50" />
+                                <p className="text-sm">Loading structure files...</p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        <TimelineControls
+                          currentFrame={currentFrame}
+                          totalFrames={totalFrames}
+                          isPlaying={isPlaying}
+                          onFrameChange={handleTimelineFrame}
+                          onPlay={handlePlay}
+                          onPause={handlePause}
+                        />
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+
+                  {/* Analysis Tab */}
+                  <TabsContent value="analysis">
+                    <SimulationCharts
+                      data={analysisData}
+                      selectedFrame={currentFrame}
+                      syncEnabled={syncEnabled}
+                      onFrameSelect={handleChartFrameSelect}
+                      onDownloadPng={handleDownloadPng}
+                    />
+                  </TabsContent>
+
+                  {/* Logs Tab */}
+                  <TabsContent value="logs">
+                    <Card className="border-border/40 bg-card/50 backdrop-blur-xl">
+                      <CardHeader>
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <FileText className="h-4 w-4 text-primary" />
+                          Simulation Log
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <LogViewer
+                          content={sim?.logTail ?? ""}
+                          maxHeight="500px"
+                        />
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+
+                  {/* Downloads Tab */}
+                  <TabsContent value="downloads">
+                    <Card className="border-border/40 bg-card/50 backdrop-blur-xl">
+                      <CardHeader>
+                        <CardTitle className="text-base">Download Results</CardTitle>
+                        <p className="text-sm text-muted-foreground">
+                          Download individual analysis plots or the complete results archive.
+                        </p>
+                      </CardHeader>
+                      <CardContent className="space-y-6">
+                        {/* Full archive */}
+                        <div>
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+                            Complete Archive
+                          </h4>
+                          <Button
+                            className="w-full gap-2 bg-gradient-primary"
+                            onClick={handleDownloadTar}
+                            disabled={!artifacts}
+                          >
+                            <Download className="h-4 w-4" />
+                            Download results.zip
+                          </Button>
+                        </div>
+
+                        {/* Analysis PNGs */}
+                        <div>
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+                            Research-Grade Analysis Plots
+                          </h4>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                            {(
+                              [
+                                { key: "rmsdPng", label: "RMSD Plot" },
+                                { key: "rmsfPng", label: "RMSF Plot" },
+                                { key: "rgPng", label: "Radius of Gyration Plot" },
+                                { key: "ssPng", label: "Secondary Structure Plot" },
+                                { key: "energyPng", label: "Energy Plot" },
+                              ] as const
+                            ).map(({ key, label }) => {
+                              const metric = key.replace("Png", "") as "rmsd" | "rmsf" | "rg" | "ss" | "energy";
+                              const available = !!artifacts?.[key];
+                              return (
+                                <Button
+                                  key={key}
+                                  variant="outline"
+                                  className="h-auto py-3 flex-col gap-1.5 border-border/50 hover:border-primary/50 hover:bg-primary/5 transition-all"
+                                  disabled={!available}
+                                  onClick={() => handleDownloadPng(metric)}
+                                >
+                                  <Download className="h-4 w-4" />
+                                  <span className="text-xs">{label}</span>
+                                </Button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+                </Tabs>
+              ) : isFailed && sim?.logTail ? (
+                <Card className="border-border/40 bg-card/50 backdrop-blur-xl">
+                  <CardHeader>
+                    <CardTitle className="text-base text-red-400 flex items-center gap-2">
+                      <Terminal className="h-4 w-4" />
+                      Error Log (Last 50 Lines)
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <LogViewer content={sim.logTail ?? ""} maxHeight="480px" />
+                  </CardContent>
+                </Card>
+              ) : (
+                /* ── Running / queued — live tabbed interface ── */
+                <Tabs defaultValue="log" className="w-full">
+                  <TabsList className="grid w-full grid-cols-3 mb-4">
+                    <TabsTrigger value="log" className="gap-2">
+                      <Terminal className="h-3.5 w-3.5" />
+                      <span>Live Log</span>
+                      {wsConnected && <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />}
+                    </TabsTrigger>
+                    <TabsTrigger value="analysis" className="gap-2">
+                      <FlaskConical className="h-3.5 w-3.5" />
+                      <span>Analysis</span>
+                      {hasLiveAnalysis && <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />}
+                    </TabsTrigger>
+                    <TabsTrigger value="trajectory" className="gap-2">
+                      <Monitor className="h-3.5 w-3.5" />
+                      <span>Trajectory</span>
+                      {liveStructureUrl && <span className="h-1.5 w-1.5 rounded-full bg-blue-400" />}
+                    </TabsTrigger>
+                  </TabsList>
+
+                  {/* Live Log Tab */}
+                  <TabsContent value="log">
+                    {liveLogsText ? (
+                      <LogViewer
+                        content={liveLogsText}
+                        maxHeight="520px"
+                        isLive={wsConnected}
+                        autoScroll
+                      />
+                    ) : (
+                      <div
+                        className="rounded-xl flex flex-col items-center justify-center min-h-[300px] text-center gap-4"
+                        style={{
+                          background: "linear-gradient(135deg, #0a0f1e 0%, #0d1117 100%)",
+                          border: "1px solid rgba(99,102,241,0.2)",
+                        }}
+                      >
+                        <div className="relative">
+                          <div className="h-12 w-12 rounded-full border-2 border-indigo-400/20 border-t-indigo-400 animate-spin" />
+                          <Terminal className="h-5 w-5 text-indigo-400 absolute inset-0 m-auto" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-mono text-indigo-300/80">
+                            {wsConnected ? "Connected — waiting for log output..." : "Connecting to simulation log stream..."}
+                          </p>
+                          <p className="text-xs text-white/20 font-mono mt-1">
+                            {wsConnected ? "● LIVE" : "○ CONNECTING"}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </TabsContent>
+
+                  {/* Live Analysis Tab */}
+                  <TabsContent value="analysis">
+                    {hasLiveAnalysis ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 px-1 mb-3">
+                          <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
+                          <span className="text-xs text-amber-400/80 font-mono uppercase tracking-wider">
+                            Partial results — analysis running
+                          </span>
+                        </div>
+                        <SimulationCharts
+                          data={analysisData}
+                          selectedFrame={currentFrame}
+                          syncEnabled={false}
+                          onDownloadPng={undefined}
+                        />
+                      </div>
+                    ) : (
+                      <Card className="border-border/40 bg-card/50 border-dashed flex flex-col items-center justify-center min-h-[300px] text-center gap-4">
+                        <FlaskConical className="h-10 w-10 text-primary/20" />
+                        <div>
+                          <p className="text-sm font-medium">Analysis not yet available</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Charts will appear here once the production run completes and analysis begins.
+                          </p>
+                        </div>
+                      </Card>
+                    )}
+                  </TabsContent>
+
+                  {/* Live Trajectory Tab */}
+                  <TabsContent value="trajectory">
+                    {liveStructureUrl ? (
+                      <Card className="border-border/40 bg-card/50 backdrop-blur-xl overflow-hidden">
+                        <CardHeader className="border-b border-border/20 py-3 px-4">
+                          <div className="flex items-center justify-between">
+                            <CardTitle className="text-sm">Live Structure Preview</CardTitle>
+                            <span className="flex items-center gap-1.5 text-xs text-blue-400">
+                              <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />
+                              Updating every 5s
+                            </span>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="p-0">
+                          <div className="h-[460px] relative">
+                            <MolstarViewer
+                              ref={molstarRef}
+                              structureUrl={liveStructureUrl}
+                              className="w-full h-full"
+                              onFrameChange={handleFrameChange}
+                            />
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      <Card className="border-border/40 bg-card/50 border-dashed flex flex-col items-center justify-center min-h-[300px] text-center gap-4">
+                        <Monitor className="h-10 w-10 text-primary/20" />
+                        <div>
+                          <p className="text-sm font-medium">Structure not yet available</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            A live preview will appear here after energy minimization completes.
+                          </p>
+                        </div>
+                      </Card>
+                    )}
+                  </TabsContent>
+                </Tabs>
+              )}
+            </motion.div>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
 }

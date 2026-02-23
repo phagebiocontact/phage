@@ -79,7 +79,7 @@ const ContactFormInner = () => {
 	});
 
 	return (
-		<Card className="border-border/40 bg-card/50 backdrop-blur-sm">
+		<Card className="border-border/30 bg-background/30 backdrop-blur-sm">
 			<CardHeader>
 				<CardTitle>Send us a message</CardTitle>
 			</CardHeader>

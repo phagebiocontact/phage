@@ -60,7 +60,7 @@ const Footer = () => {
 	return (
 		<footer className="relative overflow-hidden border-t border-border/40">
 			{/* Background Effects */}
-			<div className="absolute inset-0 bg-gradient-to-b from-muted/20 to-background" />
+			<div className="absolute inset-0" />
 			<div className="quantum-grid absolute inset-0 opacity-20" />
 			<motion.div
 				animate={{

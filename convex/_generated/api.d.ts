@@ -14,6 +14,7 @@ import type * as contact from "../contact.js";
 import type * as dodo from "../dodo.js";
 import type * as emails from "../emails.js";
 import type * as http from "../http.js";
+import type * as mdApi from "../mdApi.js";
 import type * as payments from "../payments.js";
 import type * as results from "../results.js";
 import type * as security from "../security.js";
@@ -33,6 +34,7 @@ declare const fullApi: ApiFromModules<{
   dodo: typeof dodo;
   emails: typeof emails;
   http: typeof http;
+  mdApi: typeof mdApi;
   payments: typeof payments;
   results: typeof results;
   security: typeof security;

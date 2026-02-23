@@ -85,8 +85,8 @@ function Auth() {
 							<span className="text-gradient">Molecular Discovery</span>
 						</h2>
 						<p className="text-muted-foreground text-xl leading-relaxed max-w-md">
-							Join thousands of researchers using Phage to power their
-							simulations and accelerate drug discovery.
+							Join researchers using Phage to power their
+							simulations and analysis.
 						</p>
 						{/* Features list */}
 						<div className="space-y-4 pt-4">
@@ -138,7 +138,7 @@ function Auth() {
 					</div>
 					{/* Form card */}
 					<div
-						className={`rounded-2xl border border-border/50 bg-card/80 backdrop-blur-sm p-8 shadow-xl transition-all duration-700 delay-100 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}
+						className={`rounded-2xl border border-border/30 bg-background/30 backdrop-blur-sm p-8 shadow-xl transition-all duration-700 delay-100 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}
 					>
 						<form className="space-y-5" onSubmit={handleSubmit}>
 							{isSignUp && (
