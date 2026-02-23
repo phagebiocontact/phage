@@ -60,7 +60,7 @@ const SimulateContentInner = ({ user }: { user: any }) => {
 	const [parameters, setParameters] = useState({
 		title: "",
 		description: "",
-		simulationTime: 10,
+		simulationTime: 0.1,
 		temperature: 300,
 		pressure: 1.0,
 		timestep: 4,
@@ -71,7 +71,7 @@ const SimulateContentInner = ({ user }: { user: any }) => {
 		padding: 1.0,
 		hmr: true,
 	});
-	const [equilibrationTime, setEquilibrationTime] = useState(1.0);
+	const [equilibrationTime, setEquilibrationTime] = useState(0.1);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const createSimulation = useMutation(api.simulations.createSimulation);
 	const generateUploadUrl = useMutation(api.simulations.generateUploadUrl);

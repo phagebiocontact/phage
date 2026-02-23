@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { ScrollText, Terminal } from "lucide-react";
 
 interface LogViewerProps {
@@ -16,16 +16,21 @@ export function LogViewer({
   isLive = false,
 }: LogViewerProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef(content);
+  contentRef.current = content;
 
-  useLayoutEffect(() => {
-    if (!autoScroll || !scrollRef.current) return;
-    const raf = requestAnimationFrame(() => {
-      const node = scrollRef.current;
-      if (!node) return;
-      node.scrollTop = node.scrollHeight;
+  // Stable scroll-to-bottom: trigger on every render when live
+  useEffect(() => {
+    if (!autoScroll) return;
+    const id1 = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (scrollRef.current) {
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        }
+      });
     });
-    return () => cancelAnimationFrame(raf);
-  }, [content, autoScroll]);
+    return () => cancelAnimationFrame(id1);
+  });
 
   const lines = content ? content.split("\n") : [];
 

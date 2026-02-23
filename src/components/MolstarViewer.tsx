@@ -3,202 +3,232 @@ import type { PluginUIContext } from "molstar/lib/mol-plugin-ui/context";
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 
 interface MolstarViewerProps {
-	pdbId: string;
-	className?: string;
+  structureUrl?: string;        // Completed: URL to PDB file
+  trajectoryUrl?: string;       // Completed: URL to XTC (reserved for future use)
+  livePdbBase64?: string;       // Live: base64-encoded PDB snapshot
+  className?: string;
+  onFrameChange?: (frame: number, total: number) => void;
 }
 
 export interface MolstarViewerRef {
-	setRepresentation: (type: "cartoon" | "ball-and-stick" | "surface") => void;
-	setColor: (color: "chain" | "element" | "rainbow") => void;
-	resetZoom: () => void;
+  setRepresentation: (type: "cartoon" | "ball-and-stick" | "surface") => void;
+  resetZoom: () => void;
+  setFrame: (frame: number) => void;
+  play: () => void;
+  pause: () => void;
+}
+
+async function initPlugin(container: HTMLDivElement): Promise<PluginUIContext> {
+  const { createPluginUI } = await import("molstar/lib/mol-plugin-ui");
+  const { renderReact18 } = await import("molstar/lib/mol-plugin-ui/react18");
+  const { DefaultPluginUISpec } = await import("molstar/lib/mol-plugin-ui/spec");
+  const { PluginConfig } = await import("molstar/lib/mol-plugin/config");
+
+  const plugin = await createPluginUI({
+    target: container,
+    spec: {
+      ...DefaultPluginUISpec(),
+      config: [
+        [PluginConfig.Viewport.ShowExpand, false],
+        [PluginConfig.Viewport.ShowControls, false],
+        [PluginConfig.Viewport.ShowSelectionMode, false],
+        [PluginConfig.Viewport.ShowAnimation, false],
+        [PluginConfig.Viewport.ShowSettings, false],
+      ] as never,
+      layout: {
+        initial: {
+          isExpanded: false,
+          showControls: false,
+          controlsDisplay: "reactive" as const,
+          regionState: {
+            left: "hidden" as const,
+            right: "hidden" as const,
+            top: "hidden" as const,
+            bottom: "hidden" as const,
+          },
+        },
+      },
+      components: { remoteState: "none" },
+    },
+    render: renderReact18,
+  });
+
+  plugin.layout.setProps({
+    showControls: false,
+    regionState: { left: "hidden", right: "hidden", top: "hidden", bottom: "hidden" },
+  });
+
+  return plugin;
+}
+
+async function loadPdbFromUrl(plugin: PluginUIContext, url: string) {
+  await plugin.clear();
+  const data = await plugin.builders.data.download(
+    { url, isBinary: false },
+    { state: { isGhost: true } }
+  );
+  const trajectory = await plugin.builders.structure.parseTrajectory(data, "pdb");
+  await plugin.builders.structure.hierarchy.applyPreset(trajectory, "default");
+  // After hierarchy load, apply polymer-and-ligand preset to show ligands as ball-and-stick
+  const { PresetStructureRepresentations } = await import(
+    "molstar/lib/mol-plugin-state/builder/structure/representation-preset"
+  );
+  const structs = plugin.managers.structure.hierarchy.current.structures;
+  if (structs?.length) {
+    await plugin.managers.structure.component.applyPreset(
+      structs,
+      PresetStructureRepresentations["polymer-and-ligand"]
+    );
+  }
+}
+
+async function loadPdbFromBase64Smooth(plugin: PluginUIContext, b64: string, dataNodeRef: unknown) {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const pdbString = new TextDecoder().decode(bytes);
+
+  if (dataNodeRef) {
+    await plugin.build().to(dataNodeRef).update({ data: pdbString }).commit();
+    return dataNodeRef;
+  } else {
+    await plugin.clear();
+    const dataNode = await plugin.builders.data.rawData({ data: pdbString });
+    const trajectory = await plugin.builders.structure.parseTrajectory(dataNode, "pdb");
+    await plugin.builders.structure.hierarchy.applyPreset(trajectory, "default");
+    
+    // Apply polymer-and-ligand preset
+    const { PresetStructureRepresentations } = await import(
+      "molstar/lib/mol-plugin-state/builder/structure/representation-preset"
+    );
+    const structs = plugin.managers.structure.hierarchy.current.structures;
+    if (structs?.length) {
+      await plugin.managers.structure.component.applyPreset(
+        structs,
+        PresetStructureRepresentations["polymer-and-ligand"]
+      );
+    }
+    return dataNode;
+  }
 }
 
 const MolstarViewer = forwardRef<MolstarViewerRef, MolstarViewerProps>(
-	({ pdbId, className }, ref) => {
-		const containerRef = useRef<HTMLDivElement>(null);
-		const pluginRef = useRef<PluginUIContext | null>(null);
+  ({ structureUrl, livePdbBase64, className, onFrameChange }, ref) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const pluginRef = useRef<PluginUIContext | null>(null);
+    const initDoneRef = useRef(false);
+    const loadedUrlRef = useRef<string | null>(null);
+    const loadedB64Ref = useRef<string | null>(null);
+    const liveDataNodeRef = useRef<unknown>(null);
 
-		useImperativeHandle(ref, () => ({
-			setRepresentation: async (type) => {
-				const plugin = pluginRef.current;
-				if (!plugin) return;
-				try {
-					const hierarchy = plugin.managers.structure.hierarchy.current;
-					const structureRefs = hierarchy.structures;
-					if (!structureRefs || structureRefs.length === 0) return;
+    useImperativeHandle(ref, () => ({
+      setRepresentation: async (type) => {
+        const plugin = pluginRef.current;
+        if (!plugin) return;
+        try {
+          const hierarchy = plugin.managers.structure.hierarchy.current;
+          const structureRefs = hierarchy.structures;
+          if (!structureRefs || structureRefs.length === 0) return;
+          const presetMap: Record<string, string> = {
+            cartoon: "polymer-and-ligand",
+            "ball-and-stick": "atomic-detail",
+            surface: "molecular-surface",
+          };
+          const { PresetStructureRepresentations } = await import(
+            "molstar/lib/mol-plugin-state/builder/structure/representation-preset"
+          );
+          const preset =
+            PresetStructureRepresentations[
+              presetMap[type] as keyof typeof PresetStructureRepresentations
+            ];
+          if (preset && structureRefs.length > 0) {
+            await plugin.managers.structure.component.applyPreset(structureRefs, preset);
+          }
+        } catch (err) {
+          console.warn("Could not change representation:", err);
+        }
+      },
+      resetZoom: () => {
+        pluginRef.current?.canvas3d?.requestCameraReset();
+      },
+      setFrame: () => { /* stub — XTC animation future */ },
+      play: () => { /* stub */ },
+      pause: () => { /* stub */ },
+    }));
 
-					const presetMap: Record<string, string> = {
-						cartoon: "polymer-and-ligand",
-						"ball-and-stick": "atomic-detail",
-						surface: "molecular-surface",
-					};
-					const presetName = presetMap[type] || "polymer-and-ligand";
+    // Store latest props in refs so init effect closure stays dep-free
+    const structureUrlRef = useRef(structureUrl);
+    structureUrlRef.current = structureUrl;
+    const livePdbBase64Ref = useRef(livePdbBase64);
+    livePdbBase64Ref.current = livePdbBase64;
 
-					const { PresetStructureRepresentations } = await import(
-						"molstar/lib/mol-plugin-state/builder/structure/representation-preset"
-					);
-					const preset =
-						PresetStructureRepresentations[
-							presetName as keyof typeof PresetStructureRepresentations
-						];
+    // Initialize plugin once on mount
+    useEffect(() => {
+      if (initDoneRef.current || !containerRef.current) return;
+      initDoneRef.current = true;
+      let mounted = true;
 
-					if (preset && structureRefs.length > 0) {
-						await plugin.managers.structure.component.applyPreset(
-							structureRefs,
-							preset,
-						);
-					}
-				} catch (err) {
-					console.warn("Could not change representation:", err);
-				}
-			},
-			setColor: async (colorScheme) => {
-				const plugin = pluginRef.current;
-				if (!plugin) return;
-				try {
-					const colorMap: Record<string, string> = {
-						chain: "chain-id",
-						element: "element-symbol",
-						rainbow: "sequence-id",
-					};
-					const colorName = colorMap[colorScheme] || "chain-id";
+      initPlugin(containerRef.current).then((plugin) => {
+        if (!mounted) { plugin.dispose(); return; }
+        pluginRef.current = plugin;
 
-					const structures =
-						plugin.managers.structure.hierarchy.current.structures;
-					if (structures.length === 0) return;
+        // Load whatever url/base64 is available at init time
+        const url = structureUrlRef.current;
+        const b64 = livePdbBase64Ref.current;
+        if (url && loadedUrlRef.current !== url) {
+          loadedUrlRef.current = url;
+          loadPdbFromUrl(plugin, url).catch(console.warn);
+        } else if (b64 && loadedB64Ref.current !== b64) {
+          loadedB64Ref.current = b64;
+          loadPdbFromBase64Smooth(plugin, b64, null)
+            .then(node => { liveDataNodeRef.current = node; })
+            .catch(console.warn);
+        }
+      }).catch(console.error);
 
-					for (const structure of structures) {
-						for (const component of structure.components) {
-							await plugin.managers.structure.component.updateRepresentationsTheme(
-								[component],
-								{
-									color: colorName as never,
-								},
-							);
-						}
-					}
-				} catch (err) {
-					console.warn("Could not change color:", err);
-				}
-			},
-			resetZoom: () => {
-				const plugin = pluginRef.current;
-				if (!plugin) return;
-				plugin.canvas3d?.requestCameraReset();
-			},
-		}));
+      return () => {
+        mounted = false;
+        if (pluginRef.current) {
+          pluginRef.current.dispose();
+          pluginRef.current = null;
+        }
+        initDoneRef.current = false;
+      };
+    }, []);
 
-		useEffect(() => {
-			let mounted = true;
+    // Load static PDB from URL when it changes
+    useEffect(() => {
+      if (!structureUrl || loadedUrlRef.current === structureUrl) return;
+      const plugin = pluginRef.current;
+      if (!plugin) return;
+      loadedUrlRef.current = structureUrl;
+      loadedB64Ref.current = null;
+      liveDataNodeRef.current = null;
+      loadPdbFromUrl(plugin, structureUrl)
+        .then(() => onFrameChange?.(0, 1))
+        .catch(console.warn);
+    }, [structureUrl, onFrameChange]);
 
-			const initViewer = async () => {
-				if (!containerRef.current || pluginRef.current) return;
+    // Update live structure when new base64 arrives
+    useEffect(() => {
+      if (!livePdbBase64 || loadedB64Ref.current === livePdbBase64) return;
+      const plugin = pluginRef.current;
+      if (!plugin) return;
+      loadedB64Ref.current = livePdbBase64;
+      loadPdbFromBase64Smooth(plugin, livePdbBase64, liveDataNodeRef.current)
+        .then(node => { liveDataNodeRef.current = node; })
+        .catch(console.warn);
+    }, [livePdbBase64]);
 
-				const { createPluginUI } = await import("molstar/lib/mol-plugin-ui");
-				const { renderReact18 } = await import(
-					"molstar/lib/mol-plugin-ui/react18"
-				);
-				const { DefaultPluginUISpec } = await import(
-					"molstar/lib/mol-plugin-ui/spec"
-				);
-				const { PluginConfig } = await import("molstar/lib/mol-plugin/config");
-
-				if (!mounted || !containerRef.current) return;
-
-				const plugin = await createPluginUI({
-					target: containerRef.current,
-					spec: {
-						...DefaultPluginUISpec(),
-						config: [
-							[PluginConfig.Viewport.ShowExpand, false],
-							[PluginConfig.Viewport.ShowControls, false],
-							[PluginConfig.Viewport.ShowSelectionMode, false],
-							[PluginConfig.Viewport.ShowAnimation, false],
-							[PluginConfig.Viewport.ShowSettings, false],
-						] as never,
-						layout: {
-							initial: {
-								isExpanded: false,
-								showControls: false,
-								controlsDisplay: "reactive" as const,
-								regionState: {
-									left: "hidden" as const,
-									right: "hidden" as const,
-									top: "hidden" as const,
-									bottom: "hidden" as const,
-								},
-							},
-						},
-						components: {
-							remoteState: "none",
-						},
-					},
-					render: renderReact18,
-				});
-
-				if (!mounted) {
-					plugin.dispose();
-					return;
-				}
-
-				pluginRef.current = plugin;
-
-				plugin.layout.setProps({
-					showControls: false,
-					regionState: {
-						left: "hidden",
-						right: "hidden",
-						top: "hidden",
-						bottom: "hidden",
-					},
-				});
-
-				const url = `https://files.rcsb.org/download/${pdbId}.cif`;
-				const data = await plugin.builders.data.download(
-					{ url, isBinary: false },
-					{ state: { isGhost: true } },
-				);
-
-				const trajectory = await plugin.builders.structure.parseTrajectory(
-					data,
-					"mmcif",
-				);
-				await plugin.builders.structure.hierarchy.applyPreset(
-					trajectory,
-					"default",
-				);
-
-				plugin.canvas3d?.setProps({
-					trackball: {
-						animate: {
-							name: "spin",
-							params: { speed: 0.1 },
-						},
-					},
-				});
-			};
-
-			initViewer();
-
-			return () => {
-				mounted = false;
-				if (pluginRef.current) {
-					pluginRef.current.dispose();
-					pluginRef.current = null;
-				}
-			};
-		}, [pdbId]);
-
-		return (
-			<div
-				ref={containerRef}
-				className={className}
-				style={{ position: "relative", width: "100%", height: "100%" }}
-			/>
-		);
-	},
+    return (
+      <div
+        ref={containerRef}
+        className={className}
+        style={{ position: "relative", width: "100%", height: "100%" }}
+      />
+    );
+  }
 );
 
 MolstarViewer.displayName = "MolstarViewer";
-
 export default MolstarViewer;

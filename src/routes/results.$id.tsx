@@ -20,7 +20,7 @@ import {
   Zap,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { LogViewer } from "@/components/LogViewer";
 import { useSimulationWs } from "@/hooks/useSimulationWs";
@@ -60,12 +60,20 @@ function Results() {
 
   // WS only while job is non-terminal — after completion Modal container stops
   const isTerminalStatus = ["completed", "failed", "canceled"].includes(simulation?.status ?? "");
-  const { wsStatus, liveLogsText, wsConnected, liveStructureUrl } = useSimulationWs({
+  const { wsStatus, liveLogsText, wsConnected, livePdbBase64, liveTrajectoryFrame, liveAnalysisPoints } = useSimulationWs({
     modalJobId: (simulation as { modalJobId?: string })?.modalJobId,
     enabled: !isTerminalStatus && !!simulation,
   });
-
-  // Viewer state
+  // Auto-trigger checkStatus when WS closes with terminal state so Convex updates promptly
+  const didAutoCheck = useRef(false);
+  useEffect(() => {
+    const terminalFromWs = ["completed", "failed", "canceled"].includes(wsStatus?.status ?? "");
+    if (terminalFromWs && !isTerminalStatus && !didAutoCheck.current) {
+      didAutoCheck.current = true;
+      checkStatus({ simulationId: id as Id<"simulations"> }).catch(() => {});
+    }
+    if (!terminalFromWs) didAutoCheck.current = false;
+  }, [wsStatus?.status, isTerminalStatus, checkStatus, id]);
   const molstarRef = useRef<MolstarViewerRef>(null);
   const [representation, setRepresentation] = useState<"cartoon" | "ball-and-stick" | "surface">("cartoon");
   const [currentFrame, setCurrentFrame] = useState(0);
@@ -121,7 +129,14 @@ function Results() {
       : "skip"
   );
 
-  // Build analysis data: for completed sims use Convex (reactive), during run use WS partial data
+  // Build analysis data from live points during run; from Convex after completion
+  const liveAnalysisData: SimulationAnalysisData = {
+    rmsd: liveAnalysisPoints.filter(p => p.rmsd != null).map(p => ({ frame: p.frame, time: p.time_ns, value: p.rmsd ?? 0 })),
+    rg:   liveAnalysisPoints.filter(p => p.rg != null).map(p => ({ frame: p.frame, time: p.time_ns, value: p.rg ?? 0 })),
+    energy: liveAnalysisPoints.filter(p => p.potential != null).map(p => ({ frame: p.frame, time: p.time_ns, potential: p.potential ?? 0, kinetic: p.kinetic ?? 0, total: p.total ?? 0 })),
+    ss: liveAnalysisPoints.filter(p => p.helix != null).map(p => ({ frame: p.frame, time: p.time_ns, helix: p.helix ?? 0, sheet: p.sheet ?? 0, coil: p.coil ?? 0 })),
+    rmsf: undefined,
+  };
   const wsAnalysis = wsStatus?.analysis_data as Record<string, unknown> | undefined;
   const analysisData: SimulationAnalysisData = {
     rmsd: (sim?.analysisData?.rmsd ?? wsAnalysis?.rmsd) as SimulationAnalysisData["rmsd"],
@@ -130,7 +145,7 @@ function Results() {
     energy: sim?.analysisData?.energy as SimulationAnalysisData["energy"],
     ss: sim?.analysisData?.ss as SimulationAnalysisData["ss"],
   };
-  const hasLiveAnalysis = !!wsAnalysis && Object.keys(wsAnalysis).length > 0;
+  const hasLiveAnalysis = liveAnalysisPoints.length > 0;
 
   // Live progress values: WS data while running, Convex data otherwise
   const liveProgress = wsStatus?.progress_percent ?? simulation?.progressPercent ?? 0;
@@ -731,24 +746,91 @@ function Results() {
                 </Card>
               ) : (
                 /* ── Running / queued — live tabbed interface ── */
-                <Tabs defaultValue="log" className="w-full">
+                <Tabs defaultValue="trajectory" className="w-full">
                   <TabsList className="grid w-full grid-cols-3 mb-4">
+                    <TabsTrigger value="trajectory" className="gap-2">
+                      <Monitor className="h-3.5 w-3.5" />
+                      <span>Trajectory</span>
+                      {livePdbBase64 && <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />}
+                    </TabsTrigger>
+                    <TabsTrigger value="analysis" className="gap-2">
+                      <FlaskConical className="h-3.5 w-3.5" />
+                      <span>Analysis</span>
+                      {hasLiveAnalysis && <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />}
+                    </TabsTrigger>
                     <TabsTrigger value="log" className="gap-2">
                       <Terminal className="h-3.5 w-3.5" />
                       <span>Live Log</span>
                       {wsConnected && <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />}
                     </TabsTrigger>
-                    <TabsTrigger value="analysis" className="gap-2">
-                      <FlaskConical className="h-3.5 w-3.5" />
-                      <span>Analysis</span>
-                      {hasLiveAnalysis && <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />}
-                    </TabsTrigger>
-                    <TabsTrigger value="trajectory" className="gap-2">
-                      <Monitor className="h-3.5 w-3.5" />
-                      <span>Trajectory</span>
-                      {liveStructureUrl && <span className="h-1.5 w-1.5 rounded-full bg-blue-400" />}
-                    </TabsTrigger>
                   </TabsList>
+
+                  {/* Live Trajectory Tab */}
+                  <TabsContent value="trajectory">
+                    {livePdbBase64 ? (
+                      <Card className="border-border/40 bg-card/50 backdrop-blur-xl overflow-hidden">
+                        <CardHeader className="border-b border-border/20 py-3 px-4">
+                          <div className="flex items-center justify-between">
+                            <CardTitle className="text-sm">Live Structure Preview</CardTitle>
+                            <span className="flex items-center gap-1.5 text-xs text-blue-400">
+                              <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />
+                              Frame {liveTrajectoryFrame} — updating every 1k steps
+                            </span>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="p-0">
+                          <div className="h-[460px] relative">
+                            <MolstarViewer
+                              ref={molstarRef}
+                              livePdbBase64={livePdbBase64}
+                              className="w-full h-full"
+                              onFrameChange={handleFrameChange}
+                            />
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      <Card className="border-border/40 bg-card/50 border-dashed flex flex-col items-center justify-center min-h-[300px] text-center gap-4">
+                        <Monitor className="h-10 w-10 text-primary/20" />
+                        <div>
+                          <p className="text-sm font-medium">Structure not yet available</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            A live preview will appear after the production run starts.
+                          </p>
+                        </div>
+                      </Card>
+                    )}
+                  </TabsContent>
+
+                  {/* Live Analysis Tab */}
+                  <TabsContent value="analysis">
+                    {hasLiveAnalysis ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 px-1 mb-3">
+                          <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
+                          <span className="text-xs text-amber-400/80 font-mono uppercase tracking-wider">
+                            Live — updating every 1k steps · RMSF available after production
+                          </span>
+                        </div>
+                        <SimulationCharts
+                          data={liveAnalysisData}
+                          selectedFrame={currentFrame}
+                          syncEnabled={false}
+                          onDownloadPng={undefined}
+                        />
+                      </div>
+                    ) : (
+                      <Card className="border-border/40 bg-card/50 border-dashed flex flex-col items-center justify-center min-h-[300px] text-center gap-4">
+                        <FlaskConical className="h-10 w-10 text-primary/20" />
+                        <div>
+                          <p className="text-sm font-medium">Analysis not yet available</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Charts will appear once the production run starts.
+                          </p>
+                        </div>
+                      </Card>
+                    )}
+                  </TabsContent>
 
                   {/* Live Log Tab */}
                   <TabsContent value="log">
@@ -780,73 +862,6 @@ function Results() {
                           </p>
                         </div>
                       </div>
-                    )}
-                  </TabsContent>
-
-                  {/* Live Analysis Tab */}
-                  <TabsContent value="analysis">
-                    {hasLiveAnalysis ? (
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2 px-1 mb-3">
-                          <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
-                          <span className="text-xs text-amber-400/80 font-mono uppercase tracking-wider">
-                            Partial results — analysis running
-                          </span>
-                        </div>
-                        <SimulationCharts
-                          data={analysisData}
-                          selectedFrame={currentFrame}
-                          syncEnabled={false}
-                          onDownloadPng={undefined}
-                        />
-                      </div>
-                    ) : (
-                      <Card className="border-border/40 bg-card/50 border-dashed flex flex-col items-center justify-center min-h-[300px] text-center gap-4">
-                        <FlaskConical className="h-10 w-10 text-primary/20" />
-                        <div>
-                          <p className="text-sm font-medium">Analysis not yet available</p>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Charts will appear here once the production run completes and analysis begins.
-                          </p>
-                        </div>
-                      </Card>
-                    )}
-                  </TabsContent>
-
-                  {/* Live Trajectory Tab */}
-                  <TabsContent value="trajectory">
-                    {liveStructureUrl ? (
-                      <Card className="border-border/40 bg-card/50 backdrop-blur-xl overflow-hidden">
-                        <CardHeader className="border-b border-border/20 py-3 px-4">
-                          <div className="flex items-center justify-between">
-                            <CardTitle className="text-sm">Live Structure Preview</CardTitle>
-                            <span className="flex items-center gap-1.5 text-xs text-blue-400">
-                              <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />
-                              Updating every 5s
-                            </span>
-                          </div>
-                        </CardHeader>
-                        <CardContent className="p-0">
-                          <div className="h-[460px] relative">
-                            <MolstarViewer
-                              ref={molstarRef}
-                              structureUrl={liveStructureUrl}
-                              className="w-full h-full"
-                              onFrameChange={handleFrameChange}
-                            />
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ) : (
-                      <Card className="border-border/40 bg-card/50 border-dashed flex flex-col items-center justify-center min-h-[300px] text-center gap-4">
-                        <Monitor className="h-10 w-10 text-primary/20" />
-                        <div>
-                          <p className="text-sm font-medium">Structure not yet available</p>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            A live preview will appear here after energy minimization completes.
-                          </p>
-                        </div>
-                      </Card>
                     )}
                   </TabsContent>
                 </Tabs>

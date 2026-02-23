@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Download, BarChart3 } from "lucide-react";
 import {
   CartesianGrid,
@@ -45,6 +44,7 @@ export interface EnergyPoint {
 
 export interface SsPoint {
   frame: number;
+  time?: number;
   helix: number;
   sheet: number;
   coil: number;
@@ -68,12 +68,12 @@ interface SimulationChartsProps {
 }
 
 // ─── Custom tooltip ───────────────────────────────────────────────────────────
-const CustomTooltip = ({ active, payload, label, xLabel }: any) => {
+const CustomTooltip = ({ active, payload, label, xLabel }: { active?: boolean; payload?: { dataKey: string; color: string; name: string; value: number }[]; label?: string | number; xLabel?: string }) => {
   if (!active || !payload?.length) return null;
   return (
     <div className="rounded-lg border border-border bg-card/95 backdrop-blur-sm px-3 py-2 text-xs shadow-xl">
       <p className="text-muted-foreground mb-1 font-medium">{xLabel}: {label}</p>
-      {payload.map((p: any) => (
+      {payload.map((p) => (
         <p key={p.dataKey} style={{ color: p.color }} className="font-semibold">
           {p.name}: {typeof p.value === "number" ? p.value.toFixed(4) : p.value}
         </p>
@@ -138,15 +138,6 @@ export function SimulationCharts({
   onFrameSelect,
   onDownloadPng,
 }: SimulationChartsProps) {
-  const tooltipStyle = {
-    contentStyle: {
-      backgroundColor: "hsl(var(--card))",
-      border: "1px solid hsl(var(--border))",
-      borderRadius: "8px",
-      padding: "8px 12px",
-    },
-  };
-
   const chartHeight = 340;
   const frameRefLine =
     selectedFrame !== undefined && syncEnabled ? selectedFrame : undefined;
@@ -181,9 +172,9 @@ export function SimulationCharts({
                 className={onFrameSelect ? "cursor-pointer" : ""}
               >
                 <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
-                <XAxis dataKey="frame" label={{ value: "Frame", position: "insideBottom", offset: -5 }} tick={{ fontSize: 11 }} />
+                <XAxis dataKey="time" tickFormatter={(v) => `${Number(v).toFixed(2)}`} label={{ value: "Time (ns)", position: "insideBottom", offset: -5 }} tick={{ fontSize: 11 }} />
                 <YAxis label={{ value: "RMSD (Å)", angle: -90, position: "insideLeft", offset: 10 }} tick={{ fontSize: 11 }} />
-                <Tooltip content={<CustomTooltip xLabel="Frame" />} />
+                <Tooltip content={<CustomTooltip xLabel="Time (ns)" />} />
                 <Legend />
                 {frameRefLine !== undefined && (
                   <ReferenceLine x={frameRefLine} stroke="hsl(var(--primary))" strokeDasharray="4 2" strokeWidth={2} />
@@ -242,9 +233,9 @@ export function SimulationCharts({
                 className={onFrameSelect ? "cursor-pointer" : ""}
               >
                 <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
-                <XAxis dataKey="frame" label={{ value: "Frame", position: "insideBottom", offset: -5 }} tick={{ fontSize: 11 }} />
+                <XAxis dataKey="time" tickFormatter={(v) => `${Number(v).toFixed(2)}`} label={{ value: "Time (ns)", position: "insideBottom", offset: -5 }} tick={{ fontSize: 11 }} />
                 <YAxis label={{ value: "Energy (kJ/mol)", angle: -90, position: "insideLeft", offset: 14 }} tick={{ fontSize: 11 }} />
-                <Tooltip content={<CustomTooltip xLabel="Frame" />} />
+                <Tooltip content={<CustomTooltip xLabel="Time (ns)" />} />
                 <Legend />
                 {frameRefLine !== undefined && (
                   <ReferenceLine x={frameRefLine} stroke="hsl(var(--primary))" strokeDasharray="4 2" strokeWidth={2} />
@@ -280,9 +271,9 @@ export function SimulationCharts({
                 className={onFrameSelect ? "cursor-pointer" : ""}
               >
                 <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
-                <XAxis dataKey="frame" label={{ value: "Frame", position: "insideBottom", offset: -5 }} tick={{ fontSize: 11 }} />
+                <XAxis dataKey="time" tickFormatter={(v) => `${Number(v).toFixed(2)}`} label={{ value: "Time (ns)", position: "insideBottom", offset: -5 }} tick={{ fontSize: 11 }} />
                 <YAxis label={{ value: "Rg (Å)", angle: -90, position: "insideLeft", offset: 10 }} tick={{ fontSize: 11 }} />
-                <Tooltip content={<CustomTooltip xLabel="Frame" />} />
+                <Tooltip content={<CustomTooltip xLabel="Time (ns)" />} />
                 <Legend />
                 {frameRefLine !== undefined && (
                   <ReferenceLine x={frameRefLine} stroke="hsl(var(--primary))" strokeDasharray="4 2" strokeWidth={2} />
@@ -316,9 +307,9 @@ export function SimulationCharts({
                 className={onFrameSelect ? "cursor-pointer" : ""}
               >
                 <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
-                <XAxis dataKey="frame" label={{ value: "Frame", position: "insideBottom", offset: -5 }} tick={{ fontSize: 11 }} />
+                <XAxis dataKey="time" tickFormatter={(v) => v != null ? `${Number(v).toFixed(2)}` : String(v)} label={{ value: "Time (ns)", position: "insideBottom", offset: -5 }} tick={{ fontSize: 11 }} />
                 <YAxis label={{ value: "Count", angle: -90, position: "insideLeft", offset: 10 }} tick={{ fontSize: 11 }} />
-                <Tooltip content={<CustomTooltip xLabel="Frame" />} />
+                <Tooltip content={<CustomTooltip xLabel="Time (ns)" />} />
                 <Legend />
                 <Bar dataKey="helix" stackId="ss" fill="#6366f1" name="Helix" />
                 <Bar dataKey="sheet" stackId="ss" fill="#22d3ee" name="Sheet" />

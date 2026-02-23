@@ -58,7 +58,7 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
         if analysis_data:
             status_update["analysis_data"] = analysis_data
         jc[job_id] = status_update
-    
+
     try:
         check_job_status()
         update_status("Initializing", 0, "Starting MD simulation job")
@@ -192,7 +192,11 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
             ("npt_equil", equil_time * 0.9),
             ("production", config.get("production_time_ns", 10.0))
         ]
-        
+
+        frame_count = 0
+        reference_traj = None
+        backbone_indices = None
+
         for phase_name, time_ns in phases:
             if time_ns <= 0: continue
             check_job_status()
@@ -206,13 +210,23 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
             elif phase_name == "npt_equil":
                 barostat.setFrequency(config.get("barostat_frequency", 25))
                 simulation.context.reinitialize(preserveState=True)
+            elif phase_name == "production":
+                # Save reference structure for RMSD calculation
+                with open("reference.pdb", "w") as f:
+                    PDBFile.writeFile(mod.topology, simulation.context.getState(getPositions=True).getPositions(), f)
+                reference_traj = md.load("reference.pdb")
+                backbone_indices = reference_traj.topology.select('backbone')
+                logger.info(f"Saved reference structure, {len(backbone_indices)} backbone atoms selected for RMSD")
+                # Initialize live data keys
+                jc[f"{job_id}_analysis"] = []
+                jc[f"{job_id}_frame"] = None
             
             steps = int(time_ns * 1e6 / dt.value_in_unit(omm_unit.femtoseconds))
             if phase_name == "production":
                 simulation.reporters.append(XTCReporter("prod.xtc", max(1, steps // 100)))
             
             done = 0
-            chunk = 10000
+            chunk = 1000
             update_interval = 10
             chunk_count = 0
             phase_start = time.time()
@@ -221,18 +235,71 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
                 simulation.step(curr)
                 done += curr
                 chunk_count += 1
+
                 if chunk_count % update_interval == 0:
                     check_job_status()
                     elapsed = time.time() - phase_start
                     speed = (done * dt.value_in_unit(omm_unit.femtoseconds) / 1e6) / elapsed * 86400 if elapsed > 0 else 0
-                    progress = 30 + (70 * (done / steps)) if phase_name == "production" else 30
+                    progress = 30 + (60 * (done / steps)) if phase_name == "production" else 30
                     update_status(phase_name, progress, details=f"Completed {done}/{steps} steps", speed=speed)
+
+                # Live snapshot + analysis every chunk during production
+                if phase_name == "production" and reference_traj is not None:
+                    snap_file = f"frame_{done}.pdb"
+                    state = simulation.context.getState(getPositions=True)
+                    with open(snap_file, "w") as f:
+                        PDBFile.writeFile(mod.topology, state.getPositions(), f)
+                    try:
+                        snap_traj = md.load(snap_file)
+                        rmsd_val = float(md.rmsd(snap_traj, reference_traj, atom_indices=backbone_indices)[0] * 10.0)
+                        rg_val = float(md.compute_rg(snap_traj)[0] * 10.0)
+                        dssp_arr = md.compute_dssp(snap_traj)[0]
+                        helix_count = int((dssp_arr == 'H').sum())
+                        sheet_count = int((dssp_arr == 'E').sum())
+                        coil_count = int((dssp_arr == 'C').sum())
+
+                        pot_e = kin_e = tot_e = None
+                        if os.path.exists("energy.csv"):
+                            with open("energy.csv") as fe:
+                                erows = fe.readlines()
+                            if len(erows) > 1:
+                                last_row = erows[-1].strip().split(',')
+                                try:
+                                    pot_e = float(last_row[2])
+                                    kin_e = float(last_row[3])
+                                    tot_e = float(last_row[4])
+                                except (IndexError, ValueError):
+                                    pass
+
+                        time_ns_done = done * dt.value_in_unit(omm_unit.femtoseconds) / 1e6
+                        apoint = {
+                            "frame": frame_count, "step": done,
+                            "time_ns": round(time_ns_done, 4),
+                            "rmsd": round(rmsd_val, 4),
+                            "rg": round(rg_val, 4),
+                            "helix": helix_count, "sheet": sheet_count, "coil": coil_count,
+                        }
+                        if pot_e is not None:
+                            apoint.update({"potential": round(pot_e, 2), "kinetic": round(kin_e, 2), "total": round(tot_e, 2)})
+
+                        existing = jc.get(f"{job_id}_analysis", []) or []
+                        existing.append(apoint)
+                        jc[f"{job_id}_analysis"] = existing
+                        jc[f"{job_id}_frame"] = {
+                            "frame_n": frame_count, "step": done,
+                            "time_ns": round(time_ns_done, 4), "file": snap_file
+                        }
+                        vl.commit()
+                        logger.info(f"[LIVE] Frame {frame_count} step {done}: RMSD={rmsd_val:.2f}Å Rg={rg_val:.2f}Å H/E/C={helix_count}/{sheet_count}/{coil_count}")
+                        frame_count += 1
+                    except Exception as le:
+                        logger.warning(f"[LIVE] Analysis at step {done} failed: {le}")
 
         update_status("Finalizing", 90, "Saving final structure")
         with open("complex.pdb", "w") as f:
             PDBFile.writeFile(mod.topology, simulation.context.getState(getPositions=True).getPositions(), f)
 
-        update_status("Analysis", 75, "Loading trajectory for analysis")
+        update_status("Analysis", 92, "Loading trajectory for post-production analysis")
         logger.info("Starting trajectory analysis")
 
         from MDAnalysis import transformations
@@ -265,7 +332,7 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
         
         def save_plot(df, x, y, title, filename, label=None):
             plt.figure()
-            if label:  # multi-line (dssp)
+            if label:
                 for col in label:
                     plt.plot(df[x], df[col], label=col)
                 plt.legend()
@@ -415,7 +482,7 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
 @modal.concurrent(max_inputs=100)
 @modal.asgi_app()
 def fapi():
-    import os, uuid
+    import os, uuid, base64
     from fastapi import FastAPI,File,UploadFile,WebSocket,WebSocketDisconnect
     from fastapi.responses import FileResponse,JSONResponse
     from fastapi.middleware.cors import CORSMiddleware
@@ -515,60 +582,102 @@ Upload a JSON file with the following structure:
         await jc.put.aio(job_id, state)
         return {"status": "cancelled"}
 
-
-    @api.websocket("/ws/jobs/{job_id}")
-    async def ws_job_status(websocket: WebSocket, job_id: str):
-        await websocket.accept()
-        try:
-            last_state = None
-            while True:
-                try:
-                    if await jc.contains.aio(job_id):
-                        state = await jc.get.aio(job_id)
-                        if state != last_state:
-                            last_state = state
-                            await websocket.send_json(state)
-                        status = state.get("status", "")
-                        if status in ("completed", "failed", "canceled"):
-                            break
-                    else:
-                        await websocket.send_json({"status": "not_found"})
-                        break
-                except Exception as e:
-                    await websocket.send_json({"error": str(e)})
-                await asyncio.sleep(1)
-        except WebSocketDisconnect:
-            pass
-        finally:
-            await websocket.close()
-
-    @api.websocket("/ws/jobs/{job_id}/logs")
-    async def ws_job_logs(websocket: WebSocket, job_id: str):
+    @api.websocket("/ws/jobs/{job_id}/stream")
+    async def ws_job_stream(websocket: WebSocket, job_id: str):
         await websocket.accept()
         log_path = f"/data/{job_id}/simulation.log"
         try:
-            sent_lines = 0
+            sent_log_lines = 0
+            sent_analysis_idx = 0
+            sent_frame_n = -1
+
             while True:
                 try:
                     await vl.reload.aio()
+
+                    # Status
+                    if await jc.contains.aio(job_id):
+                        state = await jc.get.aio(job_id)
+                        await websocket.send_json({"type": "status", "data": state})
+                        if state.get("status") in ("completed", "failed", "canceled"):
+                            # Flush any remaining logs before closing
+                            if os.path.exists(log_path):
+                                with open(log_path, "r", errors="replace") as f:
+                                    lines = f.readlines()
+                                if len(lines) > sent_log_lines:
+                                    await websocket.send_json({
+                                        "type": "logs",
+                                        "lines": [l.rstrip() for l in lines[sent_log_lines:]],
+                                        "start_line": sent_log_lines
+                                    })
+                            break
+                    else:
+                        await websocket.send_json({"type": "status", "data": {"status": "not_found"}})
+                        break
+
+                    # Logs
                     if os.path.exists(log_path):
                         with open(log_path, "r", errors="replace") as f:
                             lines = f.readlines()
-                        if len(lines) > sent_lines:
-                            new_lines = lines[sent_lines:]
-                            await websocket.send_json({"lines": [l.rstrip() for l in new_lines]})
-                            sent_lines = len(lines)
-                    if await jc.contains.aio(job_id):
-                        state = await jc.get.aio(job_id)
-                        if state.get("status") in ("completed", "failed", "canceled"):
-                            break
-                except Exception:
-                    pass
-                await asyncio.sleep(2)
+                        if len(lines) > sent_log_lines:
+                            new_lines = lines[sent_log_lines:]
+                            await websocket.send_json({
+                                "type": "logs",
+                                "lines": [l.rstrip() for l in new_lines],
+                                "start_line": sent_log_lines
+                            })
+                            sent_log_lines = len(lines)
+
+                    # Trajectory frame (read PDB from volume, send as base64)
+                    frame_key = f"{job_id}_frame"
+                    if await jc.contains.aio(frame_key):
+                        frame_info = await jc.get.aio(frame_key)
+                        if frame_info:
+                            frame_n = frame_info.get("frame_n", -1)
+                            if frame_n > sent_frame_n:
+                                frame_file = f"/data/{job_id}/{frame_info['file']}"
+                                if os.path.exists(frame_file):
+                                    with open(frame_file, "rb") as fh:
+                                        pdb_bytes = fh.read()
+                                    pdb_b64 = base64.b64encode(pdb_bytes).decode("ascii")
+                                    await websocket.send_json({
+                                        "type": "trajectory",
+                                        "frame": frame_n,
+                                        "step": frame_info.get("step", 0),
+                                        "time_ns": frame_info.get("time_ns", 0),
+                                        "pdb_b64": pdb_b64
+                                    })
+                                    sent_frame_n = frame_n
+
+                    # Analysis points
+                    analysis_key = f"{job_id}_analysis"
+                    if await jc.contains.aio(analysis_key):
+                        all_points = await jc.get.aio(analysis_key)
+                        if all_points and len(all_points) > sent_analysis_idx:
+                            new_points = all_points[sent_analysis_idx:]
+                            await websocket.send_json({
+                                "type": "analysis",
+                                "points": new_points,
+                                "start_index": sent_analysis_idx
+                            })
+                            sent_analysis_idx = len(all_points)
+
+                except WebSocketDisconnect:
+                    return
+                except Exception as e:
+                    try:
+                        await websocket.send_json({"type": "error", "message": str(e)})
+                    except Exception:
+                        return
+
+                await asyncio.sleep(1.5)
         except WebSocketDisconnect:
             pass
         finally:
-            await websocket.close()
+            try:
+                await websocket.close()
+            except Exception:
+                pass
 
     @api.get("/jobs/{job_id}/files/{filename}", summary="Get specific job file")
     async def get_job_file(job_id: str, filename: str):
