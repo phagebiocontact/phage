@@ -1,7 +1,7 @@
 // Typed wrappers for the FastAPI MD simulation server
 const MODAL_API_URL =
   (typeof process !== "undefined" && process.env.MODAL_API_URL) ||
-  "https://greenrace66--md-fapi-dev.modal.run";
+  "https://greenrace66--md-fapi.modal.run";
 
 export const ARTIFACT_FILENAMES = {
   structurePdb: "complex.pdb",
@@ -12,11 +12,13 @@ export const ARTIFACT_FILENAMES = {
   ssCsv: "ss.csv",
   rgCsv: "rg.csv",
   energyCsv: "energy.csv",
+  sasaCsv: "sasa.csv",
   rmsdPng: "rmsd.png",
   rmsfPng: "rmsf.png",
   ssPng: "ss.png",
   rgPng: "rg.png",
   energyPng: "energy.png",
+  sasaPng: "sasa.png",
 } as const;
 
 export type ArtifactKey = keyof typeof ARTIFACT_FILENAMES;

@@ -1,8 +1,17 @@
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+
+// Caps the visual data array to MAX_POINTS to prevent Recharts SVG memory crashes
+export function downsample<T>(data: T[] | undefined, maxPoints: number = 200): T[] {
+  if (!data || data.length <= maxPoints) return data ?? [];
+  const step = Math.ceil(data.length / maxPoints);
+  return data.filter((_, i) => i % step === 0);
+}
+// ────────────────────────────────────────────────────────────────────────────────
 
 export const MODAL_API_URL =
   (import.meta.env.VITE_MODAL_API_URL as string | undefined) ||
-  "https://greenrace66--md-fapi-dev.modal.run";
+  "https://greenrace66--md-fapi.modal.run";
 
 function toWsUrl(url: string): string {
   return url.replace(/^https/, "wss").replace(/^http(?!s)/, "ws");
@@ -47,7 +56,31 @@ export interface SimWsReturn {
   livePdbBase64: string | null;
   liveTrajectoryFrame: number;
   liveAnalysisPoints: LiveAnalysisPoint[];
+  pauseJob: () => void;
+  resumeJob: () => void;
+  cancelJob: () => void;
 }
+
+function normalizeWsStatus(raw: string | undefined): string | undefined {
+  if (!raw) return raw;
+  const map: Record<string, string> = {
+    complete: "completed",
+    completed: "completed",
+    success: "completed",
+    succeeded: "completed",
+    successful: "completed",
+    done: "completed",
+    finished: "completed",
+    finish: "completed",
+    error: "failed",
+    failed: "failed",
+    failure: "failed",
+    canceled: "canceled",
+    cancelled: "canceled",
+  };
+  return map[raw.toLowerCase()] ?? raw.toLowerCase();
+}
+
 
 export function useSimulationWs({
   modalJobId,
@@ -89,10 +122,15 @@ export function useSimulationWs({
 
           if (data.type === "status" && data.data) {
             const statusData = data.data as WsStatus;
-            setWsStatus(statusData);
+            const normalizedStatus = normalizeWsStatus(statusData.status);
+            const normalizedStatusData: WsStatus = {
+              ...statusData,
+              status: normalizedStatus,
+            };
+            setWsStatus(normalizedStatusData);
             if (
               ["completed", "failed", "canceled"].includes(
-                statusData?.status ?? ""
+                normalizedStatusData?.status ?? ""
               )
             ) {
               terminalRef.current = true;
@@ -104,7 +142,7 @@ export function useSimulationWs({
           if (data.type === "logs" && Array.isArray(data.lines)) {
             const startLine = Number(data.start_line ?? 0);
             const incoming = (data.lines as unknown[]).map(String);
-            setLiveLogs((prev) => {
+            setLiveLogs((prev: any[]) => {
               const base =
                 startLine < prev.length ? prev.slice(0, startLine) : prev;
               const merged = [...base, ...incoming];
@@ -120,7 +158,7 @@ export function useSimulationWs({
           if (data.type === "analysis" && Array.isArray(data.points)) {
             const startIdx = Number(data.start_index ?? 0);
             const incoming = data.points as LiveAnalysisPoint[];
-            setLiveAnalysisPoints((prev) => {
+            setLiveAnalysisPoints((prev: any[]) => {
               const base =
                 startIdx < prev.length ? prev.slice(0, startIdx) : prev;
               const merged = [...base, ...incoming];
@@ -157,6 +195,18 @@ export function useSimulationWs({
     };
   }, [modalJobId, enabled]);
 
+  const pauseJob = () => {
+    wsRef.current?.send(JSON.stringify({ action: "pause" }));
+  };
+
+  const resumeJob = () => {
+    wsRef.current?.send(JSON.stringify({ action: "resume" }));
+  };
+
+  const cancelJob = () => {
+    wsRef.current?.send(JSON.stringify({ action: "cancel" }));
+  };
+
   return {
     wsStatus,
     liveLogs,
@@ -165,5 +215,9 @@ export function useSimulationWs({
     livePdbBase64,
     liveTrajectoryFrame,
     liveAnalysisPoints,
+    pauseJob,
+    resumeJob,
+    cancelJob,
   };
 }
+

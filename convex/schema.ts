@@ -21,11 +21,13 @@ const artifactsSchema = v.object({
   ssCsv: v.optional(v.id("_storage")),
   rgCsv: v.optional(v.id("_storage")),
   energyCsv: v.optional(v.id("_storage")),
+  sasaCsv: v.optional(v.id("_storage")),
   rmsdPng: v.optional(v.id("_storage")),
   rmsfPng: v.optional(v.id("_storage")),
   ssPng: v.optional(v.id("_storage")),
   rgPng: v.optional(v.id("_storage")),
   energyPng: v.optional(v.id("_storage")),
+  sasaPng: v.optional(v.id("_storage")),
 });
 
 const analysisDataSchema = v.object({
@@ -58,6 +60,9 @@ const analysisDataSchema = v.object({
         coil: v.number(),
       })
     )
+  ),
+  sasa: v.optional(
+    v.array(v.object({ frame: v.number(), time: v.number(), value: v.number() }))
   ),
 });
 

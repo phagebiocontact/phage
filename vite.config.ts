@@ -4,9 +4,11 @@ import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
+import basicSsl from "@vitejs/plugin-basic-ssl";
 
 const config = defineConfig({
 	plugins: [
+		//basicSsl(),
 		devtools(),
 		tailwindcss(),
 		tsconfigPaths(),

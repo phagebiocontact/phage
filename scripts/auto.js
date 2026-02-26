@@ -1,0 +1,15 @@
+import { chromium } from "playwright";
+const browser = await chromium.launch({ headless: false,executablePath:"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" });
+const context = await browser.newContext();
+const page = await context.newPage();
+await page.goto("http://localhost:5173/simulate");
+const title = page.locator('input[required]').first();
+await title.fill("first");
+const prot = page.locator('input[accept=".pdb"]');
+await prot.setInputFiles("prot.pdb");
+const lig = page.locator('input[accept=".sdf"]');
+await lig.setInputFiles("lig.sdf");
+const submit = page.locator('button[type="submit"]');
+await submit.click();
+// await page.waitForTimeout(5000);
+// await browser.close();

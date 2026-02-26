@@ -5,7 +5,122 @@ vl=vol.from_name("md-storage",create_if_missing=True)
 jc=Dict.from_name("md-job-control",create_if_missing=True)
 image = img.debian_slim(python_version="3.12").micromamba().micromamba_install("openmm","cuda-version=12.8", "openmmforcefields", "openff-toolkit", "openff-forcefields", "mdtraj", "mdanalysis", "ambertools", "rdkit", "pdbfixer", "matplotlib", "seaborn", "numpy", "scipy", "polars", "fastapi", "parmed", "loguru", channels=["conda-forge"])
 app=modal.App(name="md")
-@app.function(image=image,gpu="T4",volumes={"/data":vl},scaledown_window=300,timeout=86400,retries=10,enable_memory_snapshot=True,experimental_options={"enable_gpu_snapshot":True})
+
+def run_rmsd(pdb_file, xtc_file, p_time):
+    try:
+        import MDAnalysis as mda
+        from MDAnalysis.analysis import rms
+        import numpy as np
+        import polars as pl
+        from loguru import logger
+        universe = mda.Universe(pdb_file, xtc_file)
+        logger.info("[RMSD] Starting calculation")
+        r = rms.RMSD(universe, select='backbone', groupselections=['backbone'], ref_frame=0)
+        r.run()
+        vals = r.results.rmsd[:, 2]
+        df = pl.DataFrame({'Time': np.arange(len(vals)) * (p_time / len(vals)), 'RMSD': vals})
+        t_list = [{"frame": i, "time": float(i * p_time / len(vals)), "value": float(v)} for i, v in enumerate(vals)]
+        logger.info(f"[RMSD] Completed successfully, {len(vals)} data points, max={vals.max():.2f} Å")
+        return ("rmsd", t_list, df)
+    except Exception as e:
+        import traceback
+        print(f"[RMSD] Analysis failed: {e}\n{traceback.format_exc()}")
+        return ("rmsd", None, None)
+
+def run_rmsf(pdb_file, xtc_file, p_time):
+    try:
+        import MDAnalysis as mda
+        from MDAnalysis.analysis import align
+        from MDAnalysis.analysis.rms import RMSF
+        import numpy as np
+        import polars as pl
+        from loguru import logger
+        universe = mda.Universe(pdb_file, xtc_file)
+        logger.info("[RMSF] Starting calculation")
+        sel = 'protein and name CA'
+        align.AlignTraj(universe, universe, select=sel, in_memory=True).run()
+        ref_avg = align.AverageStructure(universe, universe, select=sel, ref_frame=0).run().results.universe
+        align.AlignTraj(universe, ref_avg, select=sel, in_memory=True).run()
+        vals = RMSF(universe.select_atoms(sel)).run().results.rmsf
+        data = [{"residue": int(i), "value": float(v)} for i, v in enumerate(vals)]
+        df = pl.DataFrame({"Residue": np.arange(len(vals)), "RMSF": vals})
+        logger.info(f"[RMSF] Completed successfully, {len(vals)} residues, max={vals.max():.2f} Å")
+        return ("rmsf", data, df)
+    except Exception as e:
+        import traceback
+        print(f"[RMSF] Analysis failed: {e}\n{traceback.format_exc()}")
+        return ("rmsf", None, None)
+
+def run_rg(pdb_file, xtc_file, p_time):
+    try:
+        import mdtraj as md
+        import numpy as np
+        import polars as pl
+        from loguru import logger
+        traj = md.load(xtc_file, top=pdb_file)
+        logger.info("[Rg] Starting calculation")
+        rg = md.compute_rg(traj)
+        df = pl.DataFrame({"Time": np.arange(len(rg)) * (p_time / len(rg)), "Radius of gyration": rg})
+        t_list = [{"frame": i, "time": float(i * p_time / len(rg)), "value": float(v)} for i, v in enumerate(rg)]
+        logger.info(f"[Rg] Completed successfully, {len(rg)} data points")
+        return ("radiusOfGyration", t_list, df)
+    except Exception as e:
+        import traceback
+        print(f"[Rg] Analysis failed: {e}\n{traceback.format_exc()}")
+        return ("radiusOfGyration", None, None)
+
+def run_sasa(pdb_file, xtc_file, p_time):
+    try:
+        import mdtraj as md
+        import numpy as np
+        import polars as pl
+        from loguru import logger
+        traj = md.load(xtc_file, top=pdb_file)
+        # Remove virtual sites (e.g. 'VS' in OPC water) that lack radii
+        real_atom_indices = [a.index for a in traj.topology.atoms if a.element is not None and a.element.symbol != 'VS']
+        traj = traj.atom_slice(real_atom_indices)
+        logger.info("[SASA] Starting calculation")
+        totalsasa = md.shrake_rupley(traj).sum(axis=1)
+        df = pl.DataFrame({"Time": np.arange(len(totalsasa)) * (p_time / len(totalsasa)), "Total SASA": totalsasa})
+        t_list = [{"frame": i, "time": float(i * p_time / len(totalsasa)), "value": float(v)} for i, v in enumerate(totalsasa)]
+        logger.info(f"[SASA] Completed successfully, {len(totalsasa)} data points")
+        return ("sasa", t_list, df)
+    except Exception as e:
+        import traceback
+        print(f"[SASA] Analysis failed: {e}\n{traceback.format_exc()}")
+        return ("sasa", None, None)
+
+def run_dssp(pdb_file, xtc_file, p_time):
+    try:
+        import mdtraj as md
+        import numpy as np
+        import polars as pl
+        from loguru import logger
+        traj = md.load(xtc_file, top=pdb_file)
+        logger.info("[DSSP] Starting calculation")
+        dssp = md.compute_dssp(traj)
+        ss_df = pl.DataFrame({
+            'Time': np.arange(len(dssp)) * (p_time / len(dssp)),
+            'Helix': (dssp == 'H').sum(axis=1),
+            'Sheet': (dssp == 'E').sum(axis=1),
+            'Coil': (dssp == 'C').sum(axis=1)
+        })
+        data = []
+        for i, d in enumerate(dssp):
+            data.append({
+                "frame": i,
+                "helix": int((d == 'H').sum()),
+                "sheet": int((d == 'E').sum()),
+                "coil": int((d == 'C').sum())
+            })
+        logger.info(f"[DSSP] Completed successfully, {len(dssp)} frames")
+        return ("dssp", data, ss_df)
+    except Exception as e:
+        import traceback
+        print(f"[DSSP] Analysis failed: {e}\n{traceback.format_exc()}")
+        return ("dssp", None, None)
+
+@app.function(image=image,cpu=32,gpu="T4",volumes={"/data":vl},scaledown_window=300,timeout=86400,retries=10,enable_memory_snapshot=True,experimental_options={"enable_gpu_snapshot":True})
 def md(job_id,protein_bytes,ligand_bytes,config_json):
     from openmm.app import PDBFile,Modeller,PME,HBonds,Simulation,StateDataReporter,XTCReporter
     from openmmforcefields.generators import SystemGenerator
@@ -23,6 +138,9 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
     import polars as pl
     import tarfile
     import json
+    import hmac
+    import hashlib
+    import urllib.request
     from pdbfixer import PDBFixer
     from loguru import logger
     from concurrent.futures import ThreadPoolExecutor
@@ -58,6 +176,61 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
         if analysis_data:
             status_update["analysis_data"] = analysis_data
         jc[job_id] = status_update
+
+    def notify_webhook(payload, job_id=None, wait_for_callback=True):
+        webhook_url = os.getenv("SIM_WEBHOOK_URL")
+        if not webhook_url:
+            return
+        try:
+            secret = os.getenv("SIM_WEBHOOK_SECRET")
+            # Include callback URL so Convex can notify us when done
+            callback_base = os.getenv("MODAL_CALLBACK_URL", "")
+            if callback_base and job_id:
+                payload["_callback_url"] = f"{callback_base}/jobs/{job_id}/mirror-complete"
+            
+            body = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+            timestamp = str(int(time.time()))
+            headers = {
+                "Content-Type": "application/json",
+            }
+            if secret:
+                signature = hmac.new(
+                    secret.encode("utf-8"),
+                    f"{timestamp}.{body}".encode("utf-8"),
+                    hashlib.sha256,
+                ).hexdigest()
+                headers["x-simulation-webhook-timestamp"] = timestamp
+                headers["x-simulation-webhook-signature"] = signature
+            req = urllib.request.Request(
+                webhook_url,
+                data=body.encode("utf-8"),
+                headers=headers,
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=30) as response:
+                response_data = response.read().decode()
+                logger.info(f"Webhook sent, response: {response_data}")
+            
+            # Wait for Convex callback when done mirroring
+            if wait_for_callback and payload.get("status") == "completed":
+                job_id = job_id or payload.get("job_id")
+                logger.info(f"Waiting for Convex mirror callback for job {job_id}...")
+                # The webhook handler will set this flag when callback received
+                jc[f"{job_id}_mirror_complete"] = False
+                max_wait = 120
+                waited = 0
+                while waited < max_wait:
+                    time.sleep(2)
+                    waited += 2
+                    if jc.get(f"{job_id}_mirror_complete"):
+                        logger.info(f"Mirror complete callback received for job {job_id}")
+                        break
+                    if waited % 10 == 0:
+                        logger.info(f"Still waiting for mirror callback... ({waited}s elapsed)")
+                if waited >= max_wait:
+                    logger.warning(f"Mirror callback timeout for job {job_id}, proceeding anyway")
+        except Exception as webhook_err:
+            logger.warning(f"Webhook notify failed for {job_id}: {webhook_err}")
 
     try:
         check_job_status()
@@ -196,13 +369,71 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
         frame_count = 0
         reference_traj = None
         backbone_indices = None
+        ref_xyz = None  # raw numpy positions for fast RMSD without PDB round-trip
+
+        # Background thread pool for per-chunk IO/analysis so GPU never waits
+        _live_executor = ThreadPoolExecutor(max_workers=2)
+        _pending_live_future = None
+        _local_analysis_buf = []  # batched locally, flushed to jc every COMMIT_INTERVAL chunks
+        COMMIT_INTERVAL = 10
+
+        def _live_worker(positions_nm, topology, ref_xyz_bb, bb_idx, snap_file, fc, step_done, time_ns_done,
+                         read_energy, job_id, local_buf):
+            """CPU/IO work that runs off the GPU main thread."""
+            try:
+                import mdtraj as _md
+                import numpy as _np
+                # Build snap traj directly from positions array — no PDB write/read needed for analysis
+                snap_traj = _md.Trajectory(positions_nm[_np.newaxis], topology)
+                rmsd_val = float(_np.sqrt(_np.mean(_np.sum((positions_nm[bb_idx] - ref_xyz_bb) ** 2, axis=1)))) * 10.0
+                rg_val = float(_md.compute_rg(snap_traj)[0] * 10.0)
+                dssp_arr = _md.compute_dssp(snap_traj)[0]
+                helix_count = int((dssp_arr == 'H').sum())
+                sheet_count = int((dssp_arr == 'E').sum())
+                coil_count = int((dssp_arr == 'C').sum())
+
+                pot_e = kin_e = tot_e = None
+                if read_energy and os.path.exists("energy.csv"):
+                    try:
+                        with open("energy.csv") as fe:
+                            erows = fe.readlines()
+                        if len(erows) > 1:
+                            last_row = erows[-1].strip().split(',')
+                            pot_e = float(last_row[2])
+                            kin_e = float(last_row[3])
+                            tot_e = float(last_row[4])
+                    except Exception:
+                        pass
+
+                apoint = {
+                    "frame": fc, "step": step_done,
+                    "time_ns": round(time_ns_done, 4),
+                    "rmsd": round(rmsd_val, 4),
+                    "rg": round(rg_val, 4),
+                    "helix": helix_count, "sheet": sheet_count, "coil": coil_count,
+                }
+                if pot_e is not None:
+                    apoint.update({"potential": round(pot_e, 2), "kinetic": round(kin_e, 2), "total": round(tot_e, 2)})
+                local_buf.append(apoint)
+
+                # Write the PDB snap for the WebSocket viewer (still needed for trajectory streaming)
+                from openmm.app import PDBFile as _PDB
+                import openmm.unit as _u
+                pos_q = _u.Quantity(positions_nm, _u.nanometer)
+                with open(snap_file, "w") as _f:
+                    _PDB.writeFile(topology, pos_q, _f)
+
+                return (fc, step_done, time_ns_done, snap_file, apoint)
+            except Exception as _e:
+                logger.warning(f"[LIVE] Worker failed at step {step_done}: {_e}")
+                return None
 
         for phase_name, time_ns in phases:
             if time_ns <= 0: continue
             check_job_status()
             update_status(phase_name, 30, f"Starting {phase_name} ({time_ns} ns)")
             logger.info(f"Entering phase: {phase_name}")
-            
+
             if phase_name == "nvt_equil":
                 barostat.setFrequency(0)
                 simulation.context.reinitialize(preserveState=True)
@@ -211,20 +442,21 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
                 barostat.setFrequency(config.get("barostat_frequency", 25))
                 simulation.context.reinitialize(preserveState=True)
             elif phase_name == "production":
-                # Save reference structure for RMSD calculation
+                ref_state = simulation.context.getState(getPositions=True)
+                ref_pos_nm = np.asarray(ref_state.getPositions(asNumpy=True).value_in_unit(omm_unit.nanometer), dtype=np.float32)
                 with open("reference.pdb", "w") as f:
-                    PDBFile.writeFile(mod.topology, simulation.context.getState(getPositions=True).getPositions(), f)
+                    PDBFile.writeFile(mod.topology, ref_state.getPositions(), f)
                 reference_traj = md.load("reference.pdb")
                 backbone_indices = reference_traj.topology.select('backbone')
+                ref_xyz_bb = ref_pos_nm[backbone_indices]  # pre-slice for fast RMSD
                 logger.info(f"Saved reference structure, {len(backbone_indices)} backbone atoms selected for RMSD")
-                # Initialize live data keys
                 jc[f"{job_id}_analysis"] = []
                 jc[f"{job_id}_frame"] = None
-            
+
             steps = int(time_ns * 1e6 / dt.value_in_unit(omm_unit.femtoseconds))
             if phase_name == "production":
                 simulation.reporters.append(XTCReporter("prod.xtc", max(1, steps // 100)))
-            
+
             done = 0
             chunk = 1000
             update_interval = 10
@@ -232,7 +464,7 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
             phase_start = time.time()
             while done < steps:
                 curr = min(chunk, steps - done)
-                simulation.step(curr)
+                simulation.step(curr)  # GPU runs; do NOT block here with analysis
                 done += curr
                 chunk_count += 1
 
@@ -243,57 +475,49 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
                     progress = 30 + (60 * (done / steps)) if phase_name == "production" else 30
                     update_status(phase_name, progress, details=f"Completed {done}/{steps} steps", speed=speed)
 
-                # Live snapshot + analysis every chunk during production
                 if phase_name == "production" and reference_traj is not None:
-                    snap_file = f"frame_{done}.pdb"
+                    # Grab positions NOW (fast GPU→CPU copy) then immediately let GPU continue
                     state = simulation.context.getState(getPositions=True)
-                    with open(snap_file, "w") as f:
-                        PDBFile.writeFile(mod.topology, state.getPositions(), f)
-                    try:
-                        snap_traj = md.load(snap_file)
-                        rmsd_val = float(md.rmsd(snap_traj, reference_traj, atom_indices=backbone_indices)[0] * 10.0)
-                        rg_val = float(md.compute_rg(snap_traj)[0] * 10.0)
-                        dssp_arr = md.compute_dssp(snap_traj)[0]
-                        helix_count = int((dssp_arr == 'H').sum())
-                        sheet_count = int((dssp_arr == 'E').sum())
-                        coil_count = int((dssp_arr == 'C').sum())
+                    pos_nm = np.asarray(state.getPositions(asNumpy=True).value_in_unit(omm_unit.nanometer), dtype=np.float32)
+                    snap_file = f"frame_{done}.pdb"
+                    time_ns_done = done * dt.value_in_unit(omm_unit.femtoseconds) / 1e6
+                    read_energy = (chunk_count % update_interval == 0)
 
-                        pot_e = kin_e = tot_e = None
-                        if os.path.exists("energy.csv"):
-                            with open("energy.csv") as fe:
-                                erows = fe.readlines()
-                            if len(erows) > 1:
-                                last_row = erows[-1].strip().split(',')
-                                try:
-                                    pot_e = float(last_row[2])
-                                    kin_e = float(last_row[3])
-                                    tot_e = float(last_row[4])
-                                except (IndexError, ValueError):
-                                    pass
+                    # Drain the previous future result and flush to jc/vl if it's time
+                    if _pending_live_future is not None:
+                        result = _pending_live_future.result()  # non-blocking if already done
+                        if result is not None:
+                            _fc, _step, _tns, _snap, _apoint = result
+                            if chunk_count % COMMIT_INTERVAL == 0 and _local_analysis_buf:
+                                existing = jc.get(f"{job_id}_analysis", []) or []
+                                existing.extend(_local_analysis_buf)
+                                jc[f"{job_id}_analysis"] = existing
+                                jc[f"{job_id}_frame"] = {"frame_n": _fc, "step": _step, "time_ns": round(_tns, 4), "file": _snap}
+                                vl.commit()
+                                logger.info(f"[LIVE] Flushed {len(_local_analysis_buf)} frames to jc, last RMSD={_apoint['rmsd']:.2f}Å")
+                                _local_analysis_buf.clear()
 
-                        time_ns_done = done * dt.value_in_unit(omm_unit.femtoseconds) / 1e6
-                        apoint = {
-                            "frame": frame_count, "step": done,
-                            "time_ns": round(time_ns_done, 4),
-                            "rmsd": round(rmsd_val, 4),
-                            "rg": round(rg_val, 4),
-                            "helix": helix_count, "sheet": sheet_count, "coil": coil_count,
-                        }
-                        if pot_e is not None:
-                            apoint.update({"potential": round(pot_e, 2), "kinetic": round(kin_e, 2), "total": round(tot_e, 2)})
+                    # Fire off next chunk's work to background thread
+                    _pending_live_future = _live_executor.submit(
+                        _live_worker, pos_nm, mod.topology, ref_xyz_bb, backbone_indices,
+                        snap_file, frame_count, done, time_ns_done, read_energy, job_id, _local_analysis_buf
+                    )
+                    frame_count += 1
 
-                        existing = jc.get(f"{job_id}_analysis", []) or []
-                        existing.append(apoint)
-                        jc[f"{job_id}_analysis"] = existing
-                        jc[f"{job_id}_frame"] = {
-                            "frame_n": frame_count, "step": done,
-                            "time_ns": round(time_ns_done, 4), "file": snap_file
-                        }
-                        vl.commit()
-                        logger.info(f"[LIVE] Frame {frame_count} step {done}: RMSD={rmsd_val:.2f}Å Rg={rg_val:.2f}Å H/E/C={helix_count}/{sheet_count}/{coil_count}")
-                        frame_count += 1
-                    except Exception as le:
-                        logger.warning(f"[LIVE] Analysis at step {done} failed: {le}")
+        # Drain any remaining live future
+        if _pending_live_future is not None:
+            try:
+                result = _pending_live_future.result(timeout=30)
+                if result and _local_analysis_buf:
+                    existing = jc.get(f"{job_id}_analysis", []) or []
+                    existing.extend(_local_analysis_buf)
+                    jc[f"{job_id}_analysis"] = existing
+                    jc[f"{job_id}_frame"] = {"frame_n": result[0], "step": result[1], "time_ns": round(result[2], 4), "file": result[3]}
+                    vl.commit()
+                    _local_analysis_buf.clear()
+            except Exception as _drain_e:
+                logger.warning(f"[LIVE] Final drain failed: {_drain_e}")
+        _live_executor.shutdown(wait=False)
 
         update_status("Finalizing", 90, "Saving final structure")
         with open("complex.pdb", "w") as f:
@@ -341,84 +565,37 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
             plt.xlabel(x); plt.ylabel(y); plt.title(title)
             plt.savefig(filename, dpi=200); plt.close()
 
-        def run_rmsd(universe):
-            try:
-                logger.info("[RMSD] Starting calculation")
-                r = rms.RMSD(universe, select='backbone', groupselections=['backbone'], ref_frame=0)
-                r.run()
-                vals = r.results.rmsd[:, 2]
-                df = pl.DataFrame({'Time': np.arange(len(vals)) * (prod_time / len(vals)), 'RMSD': vals})
-                logger.info(f"[RMSD] Completed successfully, {len(vals)} data points, max={vals.max():.2f} Å")
-                return ("rmsd", ts(vals), df)
-            except Exception as e:
-                logger.error(f"[RMSD] Analysis failed: {e}", exc_info=True)
-                return ("rmsd", None, None)
 
-        def run_rmsf(universe):
-            try:
-                logger.info("[RMSF] Starting calculation")
-                sel = 'protein and name CA'
-                align.AlignTraj(universe, universe, select=sel, in_memory=True).run()
-                ref_avg = align.AverageStructure(universe, universe, select=sel, ref_frame=0).run().results.universe
-                align.AlignTraj(universe, ref_avg, select=sel, in_memory=True).run()
-                vals = RMSF(universe.select_atoms(sel)).run().results.rmsf
-                data = [{"residue": int(i), "value": float(v)} for i, v in enumerate(vals)]
-                df = pl.DataFrame({"Residue": np.arange(len(vals)), "RMSF": vals})
-                logger.info(f"[RMSF] Completed successfully, {len(vals)} residues, max={vals.max():.2f} Å")
-                return ("rmsf", data, df)
-            except Exception as e:
-                logger.error(f"[RMSF] Analysis failed: {e}", exc_info=True)
-                return ("rmsf", None, None)
+        # Save a viewer-optimized unwrapped trajectory before running parallel analysis
+        logger.info("Generating viewer.xtc with unwrapped coordinates for fast playback")
+        viewer_xtc = "viewer.xtc"
+        try:
+            with mda.Writer(viewer_xtc, u_mda.trajectory.n_atoms) as W:
+                for _ in u_mda.trajectory:
+                    W.write(u_mda)
+            logger.info("Saved unwrapped viewer.xtc")
+        except Exception as e:
+            logger.warning(f"Failed to write viewer.xtc, falling back to prod.xtc: {e}")
+            viewer_xtc = "prod.xtc"
 
-        def run_rg(traj):
-            try:
-                logger.info("[Rg] Starting calculation")
-                rg = md.compute_rg(traj)
-                df = pl.DataFrame({"Time": np.arange(len(rg)) * (prod_time / len(rg)), "Radius of gyration": rg})
-                logger.info(f"[Rg] Completed successfully, {len(rg)} data points")
-                return ("radiusOfGyration", ts(rg), df)
-            except Exception as e:
-                logger.error(f"[Rg] Analysis failed: {e}", exc_info=True)
-                return ("radiusOfGyration", None, None)
-
-        def run_sasa(traj):
-            try:
-                logger.info("[SASA] Starting calculation")
-                totalsasa = md.shrake_rupley(traj).sum(axis=1)
-                df = pl.DataFrame({"Time": np.arange(len(totalsasa)) * (prod_time / len(totalsasa)), "Total SASA": totalsasa})
-                logger.info(f"[SASA] Completed successfully, {len(totalsasa)} data points")
-                return ("sasa", ts(totalsasa), df)
-            except Exception as e:
-                logger.error(f"[SASA] Analysis failed: {e}", exc_info=True)
-                return ("sasa", None, None)
-
-        def run_dssp(traj):
-            try:
-                logger.info("[DSSP] Starting calculation")
-                dssp = md.compute_dssp(traj)
-                ss_df = pl.DataFrame({
-                    'Time': np.arange(len(dssp)) * (prod_time / len(dssp)),
-                    'Helix': (dssp == 'H').sum(axis=1),
-                    'Sheet': (dssp == 'E').sum(axis=1),
-                    'Coil': (dssp == 'C').sum(axis=1)
-                })
-                logger.info(f"[DSSP] Completed successfully, {len(dssp)} frames")
-                return ("dssp", None, ss_df)
-            except Exception as e:
-                logger.error(f"[DSSP] Analysis failed: {e}", exc_info=True)
-                return ("dssp", None, None)
-
+        # Free MDA memory map, we will use iterload for chunks now
+        del u_mda
+        
         analysis_results = {}
-        logger.info("Starting parallel analysis with 5 workers (shared trajectory)")
-        with ThreadPoolExecutor(max_workers=5) as executor:
+        logger.info("Starting true parallel analysis with ProcessPoolExecutor (4 workers)")
+        
+        # We pass filenames instead of objects to ProcessPool worker so they can stream from disk independently
+        import multiprocessing
+        
+        with multiprocessing.Pool(processes=4) as pool:
             futures = [
-                executor.submit(run_rmsd, u_mda),
-                executor.submit(run_rmsf, u_mda),
-                executor.submit(run_rg, u_mdtraj),
-                executor.submit(run_sasa, u_mdtraj),
-                executor.submit(run_dssp, u_mdtraj)
+                pool.apply_async(run_rmsd, ("complex.pdb", viewer_xtc, prod_time)),
+                pool.apply_async(run_rmsf, ("complex.pdb", viewer_xtc, prod_time)),
+                pool.apply_async(run_rg, ("complex.pdb", viewer_xtc, prod_time)),
+                pool.apply_async(run_sasa, ("complex.pdb", viewer_xtc, prod_time)),
+                pool.apply_async(run_dssp, ("complex.pdb", viewer_xtc, prod_time))
             ]
-
+            
             PLOT_CFG = {
                 "rmsd":             ("Time", "RMSD (Å)",                "RMSD",                "rmsd.png",  "rmsd.csv",  None),
                 "rmsf":             ("Residue", "RMSF (Å)",            "RMSF",                "rmsf.png",  "rmsf.csv",  None),
@@ -428,7 +605,7 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
             }
 
             for future in futures:
-                key, data, df = future.result()
+                key, data, df = future.get()
                 if key and df is not None:
                     if data: analysis_results[key] = data
                     try:
@@ -443,11 +620,63 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
                 else:
                     logger.warning(f"[{key}] Analysis returned no data")
 
+        
+        # Load energy data
+        try:
+            if os.path.exists("energy.csv"):
+                logger.info("Parsing energy.csv into analysis_results and generating plot")
+                import polars as pl
+                try:
+                    df_e = pl.read_csv("energy.csv")
+                    # Clean up column names by removing whitespace and quotes
+                    new_cols = [c.strip().strip('"') for c in df_e.columns]
+                    df_e.columns = new_cols
+                    plt.figure()
+                    for col in ["Potential Energy (kJ/mole)", "Kinetic Energy (kJ/mole)", "Total Energy (kJ/mole)"]:
+                        if col in df_e.columns:
+                            plt.plot(df_e["Time (ps)"].to_numpy(), df_e[col].to_numpy(), label=col.split(" (")[0])
+                    plt.xlabel("Time (ps)")
+                    plt.ylabel("Energy (kJ/mole)")
+                    plt.legend()
+                    plt.title("System Energy")
+                    plt.savefig("energy.png", dpi=200)
+                    plt.close()
+                except Exception as p_e:
+                    logger.warning(f"Failed to generate energy.png: {p_e}")
+
+                ene_data = []
+                with open("energy.csv", "r") as f:
+                    lines = f.readlines()
+                for i, line in enumerate(lines[1:]):
+                    parts = line.strip().split(',')
+                    if len(parts) >= 5:
+                        ene_data.append({
+                            "frame": i,
+                            "time": round(float(parts[1]) / 1000.0, 4), # ps to ns
+                            "potential": round(float(parts[2]), 2),
+                            "kinetic": round(float(parts[3]), 2),
+                            "total": round(float(parts[4]), 2),
+                        })
+                if ene_data:
+                    analysis_results["energy"] = ene_data
+        except Exception as e:
+            logger.warning(f"Failed to parse energy data: {e}")
+
+        logger.info("Saving frame count to job control")
+        try:
+            jc[f"{job_id}_frame_count"] = u_mdtraj.n_frames
+        except Exception:
+            pass
+
         logger.info("Freeing trajectory memory")
-        del u_mda, u_mdtraj
+        del u_mdtraj
         
         logger.info("All analysis tasks completed")
         update_status("Analysis", 95, "Analysis tasks completed", analysis_data=analysis_results)
+        
+        # Ensure all files are committed to volume before webhook
+        logger.info("Committing all files to volume...")
+        vl.commit()
         
         update_status("Finalizing", 98, "Creating output tarball")
         logger.info("Creating output tarball")
@@ -459,13 +688,25 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
         vl.commit()
         
         elapsed = time.time() - start_time
-        jc[job_id] = {
+        final_state = {
             "status": "completed",
             "current_step": "Completed",
             "progress_percent": 100,
             "time_elapsed_seconds": round(elapsed, 2),
             "details": "MD simulation completed successfully"
         }
+        if analysis_results:
+            final_state["analysis_data"] = analysis_results
+        jc[job_id] = final_state
+        notify_webhook({
+            "job_id": job_id,
+            "status": "completed",
+            "current_step": "Completed",
+            "progress_percent": 100,
+            "time_elapsed_seconds": round(elapsed, 2),
+            "details": "MD simulation completed successfully",
+        })
+
     except Exception as e:
         elapsed = time.time() - start_time
         jc[job_id] = {
@@ -476,6 +717,15 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
             "details": f"Error: {str(e)}",
             "error": str(e)
         }
+        notify_webhook({
+            "job_id": job_id,
+            "status": "failed",
+            "current_step": "Error",
+            "progress_percent": 0,
+            "time_elapsed_seconds": round(elapsed, 2),
+            "details": f"Error: {str(e)}",
+            "error": str(e),
+        })
         raise
 
 @app.function(image=image,volumes={"/data":vl},scaledown_window=300)
@@ -555,36 +805,29 @@ Upload a JSON file with the following structure:
                 content={"error": "Job not found", "job_id": job_id}
             )
 
-    @api.post("/jobs/{job_id}/pause", summary="Pause a job")
-    async def pause_job(job_id: str):
-        if not await jc.contains.aio(job_id): 
-            return JSONResponse(status_code=404, content={"error": "Job not found"})
-        state = await jc.get.aio(job_id)
-        state["paused"] = True
-        await jc.put.aio(job_id, state)
-        return {"status": "paused"}
-
-    @api.post("/jobs/{job_id}/resume", summary="Resume a job")
-    async def resume_job(job_id: str):
-        if not await jc.contains.aio(job_id): 
-            return JSONResponse(status_code=404, content={"error": "Job not found"})
-        state = await jc.get.aio(job_id)
-        state["paused"] = False
-        await jc.put.aio(job_id, state)
-        return {"status": "resumed"}
-
-    @api.post("/jobs/{job_id}/cancel", summary="Cancel a job")
-    async def cancel_job(job_id: str):
-        if not await jc.contains.aio(job_id): 
-            return JSONResponse(status_code=404, content={"error": "Job not found"})
-        state = await jc.get.aio(job_id)
-        state["cancelled"] = True
-        await jc.put.aio(job_id, state)
-        return {"status": "cancelled"}
-
     @api.websocket("/ws/jobs/{job_id}/stream")
     async def ws_job_stream(websocket: WebSocket, job_id: str):
         await websocket.accept()
+        
+        async def handle_commands():
+            try:
+                while True:
+                    data = await websocket.receive_json()
+                    action = data.get("action")
+                    if not await jc.contains.aio(job_id): continue
+                    state = await jc.get.aio(job_id)
+                    if action == "pause":
+                        state["paused"] = True
+                        await jc.put.aio(job_id, state)
+                    elif action == "resume":
+                        state["paused"] = False
+                        await jc.put.aio(job_id, state)
+                    elif action == "cancel":
+                        state["cancelled"] = True
+                        await jc.put.aio(job_id, state)
+            except: pass
+
+        cmd_task = asyncio.create_task(handle_commands())
         log_path = f"/data/{job_id}/simulation.log"
         try:
             sent_log_lines = 0
@@ -599,7 +842,7 @@ Upload a JSON file with the following structure:
                     if await jc.contains.aio(job_id):
                         state = await jc.get.aio(job_id)
                         await websocket.send_json({"type": "status", "data": state})
-                        if state.get("status") in ("completed", "failed", "canceled"):
+                        if state.get("status") in ("completed", "failed", "canceled", "cancelled"):
                             # Flush any remaining logs before closing
                             if os.path.exists(log_path):
                                 with open(log_path, "r", errors="replace") as f:
@@ -674,18 +917,154 @@ Upload a JSON file with the following structure:
         except WebSocketDisconnect:
             pass
         finally:
+            cmd_task.cancel()
             try:
                 await websocket.close()
             except Exception:
                 pass
 
-    @api.get("/jobs/{job_id}/files/{filename}", summary="Get specific job file")
+
+    @api.get("/jobs/{job_id}/files/{filename:path}", summary="Get specific job file")
     async def get_job_file(job_id: str, filename: str):
         await vl.reload.aio()
         file_path = f"/data/{job_id}/{filename}"
         if os.path.exists(file_path):
             return FileResponse(file_path)
         return JSONResponse(status_code=404, content={"error": "File not found"})
+
+    @api.get("/jobs/{job_id}/frame-count", summary="Get total extracted frame count")
+    async def get_frame_count(job_id: str):
+        """Returns the total number of frames in the production XTC trajectory."""
+        key = f"{job_id}_frame_count"
+        if await jc.contains.aio(key):
+            count = await jc.get.aio(key)
+            return {"job_id": job_id, "total_frames": count}
+        return JSONResponse(status_code=404, content={"error": "Trajectory stats not ready"})
+
+    @api.get("/jobs/{job_id}/frame/{frame_index}", summary="Get a specific trajectory frame as PDB")
+    async def get_frame(job_id: str, frame_index: int):
+        """Returns a single trajectory frame extracted on-the-fly from the XTC file using MDTraj."""
+        import mdtraj as md
+        import tempfile
+        import os
+        from fastapi import Response
+        
+        await vl.reload.aio()
+        xtc_path = f"/data/{job_id}/prod.xtc"
+        pdb_path = f"/data/{job_id}/complex.pdb"
+        
+        if not os.path.exists(xtc_path) or not os.path.exists(pdb_path):
+            return JSONResponse(status_code=404, content={"error": "Trajectory files not found"})
+            
+        try:
+            t = md.load_frame(xtc_path, top=pdb_path, index=frame_index)
+            try:
+                t.image_molecules(inplace=True)
+            except Exception:
+                pass
+            fd, fpath = tempfile.mkstemp(suffix=".pdb")
+            os.close(fd)
+            t.save_pdb(fpath)
+            with open(fpath, "r") as f:
+                pdb_str = f.read()
+            os.remove(fpath)
+            return Response(content=pdb_str, media_type="chemical/x-pdb")
+        except IndexError:
+            return JSONResponse(status_code=404, content={"error": f"Frame {frame_index} out of bounds"})
+        except Exception as e:
+            return JSONResponse(status_code=500, content={"error": str(e)})
+
+    @api.websocket("/ws/jobs/{job_id}/playback")
+    async def ws_playback(websocket: WebSocket, job_id: str):
+        """
+        High-performance WebSocket for streaming trajectory frames. 
+        Loads the trajectory ONCE into memory, then rapidly serves requested frames.
+        """
+        import mdtraj as md
+        import tempfile
+        import os
+        import json
+
+        await websocket.accept()
+        await vl.reload.aio()
+        
+        # Check for our pre-processed unwrapped viewer.xtc first, fallback to prod.xtc
+        viewer_xtc_path = f"/data/{job_id}/viewer.xtc"
+        base_xtc_path = f"/data/{job_id}/prod.xtc"
+        xtc_path = viewer_xtc_path if os.path.exists(viewer_xtc_path) else base_xtc_path
+        
+        pdb_path = f"/data/{job_id}/complex.pdb"
+
+        if not os.path.exists(xtc_path) or not os.path.exists(pdb_path):
+            await websocket.send_json({"error": "Trajectory files not found"})
+            await websocket.close()
+            return
+            
+        # 1. Load ONLY the topology into RAM memory ONCE to avoid huge memory spikes
+        try:
+            # Parse the topology
+            base_pdb = md.load(pdb_path)
+            cached_topology = base_pdb.topology
+            
+            # Fast get total frames
+            total_frames = 0
+            key = f"{job_id}_frame_count"
+            if await jc.contains.aio(key):
+                total_frames = await jc.get.aio(key)
+            else:
+                with md.formats.XTCTrajectoryFile(xtc_path) as f:
+                    total_frames = len(f)
+                    
+            await websocket.send_json({"type": "ready", "total_frames": total_frames})
+        except Exception as e:
+            await websocket.send_json({"error": f"Failed to initialize trajectory: {str(e)}"})
+            await websocket.close()
+            return
+
+        # 2. Listen for frame requests
+        try:
+            while True:
+                data = await websocket.receive_text()
+                try:
+                    msg = json.loads(data)
+                except:
+                    continue
+                    
+                action = msg.get("action")
+                if action == "get_frame":
+                    frame_idx = msg.get("frame_index")
+                    if frame_idx is None or frame_idx < 0 or frame_idx >= total_frames:
+                        await websocket.send_json({"error": "Invalid frame index", "frame_index": frame_idx})
+                        continue
+                        
+                    # Extract the single frame from XTC using the cached topology (Very fast, ~5MB RAM usage)
+                    t_frame = md.load_frame(xtc_path, top=cached_topology, index=frame_idx)
+                    # We NO LONGER need image_molecules here because viewer.xtc is PRE-UNWRAPPED!
+                    
+                    # Convert to PDB string
+                    fd, fpath = tempfile.mkstemp(suffix=".pdb")
+                    os.close(fd)
+                    t_frame.save_pdb(fpath)
+                    with open(fpath, "r") as f:
+                        pdb_str = f.read()
+                    os.remove(fpath)
+                    del t_frame
+                    
+                    # Send instantly over socket
+                    await websocket.send_json({
+                        "type": "frame_data",
+                        "frame_index": frame_idx,
+                        "pdb": pdb_str
+                    })
+        except WebSocketDisconnect:
+            pass
+        finally:
+            del cached_topology
+            del base_pdb
+            try:
+                await websocket.close()
+            except:
+                pass
 
     @api.get("/jobs/{job_id}/tar",
              summary="Get job results",
@@ -695,4 +1074,13 @@ Upload a JSON file with the following structure:
         tar_path=f"/data/{job_id}/md.tar.gz"
         if os.path.exists(tar_path):
             return FileResponse(tar_path,media_type="application/gzip",filename=f"md_{job_id}.tar.gz")
+
+    @api.post("/jobs/{job_id}/mirror-complete",
+              summary="Callback when Convex finishes mirroring")
+    async def mirror_complete_callback(job_id: str):
+        """Called by Convex when it finishes mirroring files to storage."""
+        logger.info(f"Received mirror-complete callback for job {job_id}")
+        jc[f"{job_id}_mirror_complete"] = True
+        return {"status": "ok", "job_id": job_id}
+    
     return api

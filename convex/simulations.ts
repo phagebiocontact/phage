@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
-import { mutation, query, internalMutation } from "./_generated/server";
+import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { auth } from "./auth";
 
@@ -120,6 +120,16 @@ export const getArtifactUrl = query({
     const simulation = await ctx.db.get(args.simulationId);
     if (!simulation || simulation.userId !== userId) return null;
     return ctx.storage.getUrl(args.storageId);
+  },
+});
+
+export const getSimulationByModalJobId = internalQuery({
+  args: { modalJobId: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("simulations")
+      .filter((q) => q.eq(q.field("modalJobId"), args.modalJobId))
+      .first();
   },
 });
 

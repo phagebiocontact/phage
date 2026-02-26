@@ -12,7 +12,6 @@ import {
   type JobStatusValue,
 } from "./mdApi";
 
-const POLL_INTERVAL_MS = 10_000;
 const TERMINAL: Set<JobStatusValue> = new Set(["completed", "failed", "canceled"]);
 
 // ─── Submit Job ───────────────────────────────────────────────────────────────
@@ -68,10 +67,7 @@ export const submitJob = internalAction({
         details: "Job submitted to FastAPI server",
       });
 
-      // Kick off autonomous polling
-      await ctx.scheduler.runAfter(POLL_INTERVAL_MS, internal.actions.pollJobStatus, {
-        simulationId: args.simulationId,
-      });
+      // Polling is manual fallback only; completion should arrive via webhook.
     } catch (error) {
       const msg = error instanceof Error ? error.message : "Unknown error";
       await ctx.runMutation(internal.simulations.updateSimulationStatus, {
@@ -115,11 +111,11 @@ export const pollJobStatus = internalAction({
         lastPolledAt: Date.now(),
         ...(statusData.error
           ? {
-              error: statusData.error,
-              errorSummary: extractUserFriendlyError(statusData.error),
-              errorRaw: statusData.error,
-              errorDetails: statusData.error_details,
-            }
+            error: statusData.error,
+            errorSummary: extractUserFriendlyError(statusData.error),
+            errorRaw: statusData.error,
+            errorDetails: statusData.error_details,
+          }
           : {}),
       });
 
@@ -137,20 +133,12 @@ export const pollJobStatus = internalAction({
         return;
       }
 
-      // Not terminal – reschedule
-      await ctx.scheduler.runAfter(POLL_INTERVAL_MS, internal.actions.pollJobStatus, {
-        simulationId: args.simulationId,
-      });
     } catch (error) {
       const msg = error instanceof Error ? error.message : "Unknown poll error";
       await ctx.runMutation(internal.simulations.updateSimulationStatus, {
         simulationId: args.simulationId,
         error: msg,
         lastPolledAt: Date.now(),
-      });
-      // Still reschedule in case of transient error
-      await ctx.scheduler.runAfter(POLL_INTERVAL_MS, internal.actions.pollJobStatus, {
-        simulationId: args.simulationId,
       });
     }
   },
@@ -166,9 +154,74 @@ export const checkJobStatus = action({
   },
 });
 
+export const handleSimulationWebhook = action({
+  args: {
+    jobId: v.string(),
+    status: v.string(),
+    currentStep: v.optional(v.string()),
+    progressPercent: v.optional(v.number()),
+    timeElapsedSeconds: v.optional(v.number()),
+    details: v.optional(v.string()),
+    error: v.optional(v.string()),
+    errorDetails: v.optional(v.string()),
+    _callback_url: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<{ accepted: boolean; reason?: string }> => {
+    const simulation = await ctx.runQuery(internal.simulations.getSimulationByModalJobId, {
+      modalJobId: args.jobId,
+    });
+    if (!simulation) {
+      return { accepted: false, reason: "simulation_not_found" };
+    }
+    if (TERMINAL.has(simulation.status as JobStatusValue)) {
+      return { accepted: true, reason: "already_terminal" };
+    }
+
+    const normalizedStatus = normalizeStatus(args.status);
+
+    await ctx.runMutation(internal.simulations.updateSimulationStatus, {
+      simulationId: simulation._id,
+      status: normalizedStatus,
+      currentStep: args.currentStep,
+      progressPercent: args.progressPercent,
+      timeElapsedSeconds: args.timeElapsedSeconds,
+      details: args.details,
+      lastPolledAt: Date.now(),
+      ...(args.error
+        ? {
+          error: args.error,
+          errorSummary: extractUserFriendlyError(args.error),
+          errorRaw: args.error,
+          errorDetails: args.errorDetails,
+        }
+        : {}),
+    });
+
+    if (normalizedStatus === "completed") {
+      // Pass callback URL to mirrorResults so it can notify Modal when done
+      await ctx.runAction(internal.actions.mirrorResults, {
+        simulationId: simulation._id,
+        callbackUrl: args._callback_url,
+      });
+      return { accepted: true };
+    }
+
+    if (normalizedStatus === "failed" || normalizedStatus === "canceled") {
+      await ctx.runMutation(internal.simulations.releaseCredits, {
+        simulationId: simulation._id,
+      });
+    }
+
+    return { accepted: true };
+  },
+});
+
 // ─── Mirror Results ───────────────────────────────────────────────────────────
 export const mirrorResults = internalAction({
-  args: { simulationId: v.id("simulations") },
+  args: {
+    simulationId: v.id("simulations"),
+    callbackUrl: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
     const simulation = await ctx.runQuery(api.simulations.getSimulation, {
       id: args.simulationId,
@@ -178,30 +231,42 @@ export const mirrorResults = internalAction({
     const jobId = simulation.modalJobId;
     const artifactIds: Record<string, Id<"_storage">> = {};
 
-    // Mirror each artifact, tolerating individual failures
-    const mirrors = Object.entries(ARTIFACT_FILENAMES).map(async ([key, filename]) => {
+    // Mirror each artifact - track successes and failures for debugging
+    const mirrorResults: Array<{ key: string; filename: string; success: boolean; error?: string }> = [];
+
+    for (const [key, filename] of Object.entries(ARTIFACT_FILENAMES)) {
       try {
         const bytes = await apiGetJobFile(jobId, filename);
         const blob = new Blob([bytes]);
         const storageId = await ctx.storage.store(blob);
         artifactIds[key] = storageId;
-      } catch {
-        // Artifact not yet available – skip
+        mirrorResults.push({ key, filename, success: true });
+        console.log(`[mirror] Success: ${filename}`);
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        mirrorResults.push({ key, filename, success: false, error: errorMsg });
+        console.warn(`[mirror] Failed to download ${filename}: ${errorMsg}`);
       }
-    });
+    }
 
     // Also mirror the tarball
-    const tarMirror = (async () => {
-      try {
-        const tarBytes = await apiGetJobTar(jobId);
-        const tarBlob = new Blob([tarBytes]);
-        artifactIds.resultTar = await ctx.storage.store(tarBlob);
-      } catch {
-        // Skip
-      }
-    })();
+    try {
+      const tarBytes = await apiGetJobTar(jobId);
+      const tarBlob = new Blob([tarBytes]);
+      artifactIds.resultTar = await ctx.storage.store(tarBlob);
+      console.log("[mirror] Success: md.tar.gz");
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      console.warn(`[mirror] Failed to download md.tar.gz: ${errorMsg}`);
+    }
 
-    await Promise.all([...mirrors, tarMirror]);
+    // Log summary of what was mirrored
+    const successful = mirrorResults.filter(r => r.success).map(r => r.filename);
+    const failed = mirrorResults.filter(r => !r.success).map(r => `${r.filename}: ${r.error}`);
+    console.log(`[mirror] Summary - Success: ${successful.length}, Failed: ${failed.length}`);
+    if (failed.length > 0) {
+      console.warn("[mirror] Failed files:", failed);
+    }
 
     // Parse CSVs if available
     const analysisData = await parseAnalysisCsvs(ctx, artifactIds);
@@ -236,6 +301,18 @@ export const mirrorResults = internalAction({
     await ctx.runMutation(internal.simulations.captureCredits, {
       simulationId: args.simulationId,
     });
+
+    // Call back Modal to notify that mirroring is complete
+    if (args.callbackUrl) {
+      try {
+        await fetch(args.callbackUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch {
+        // Callback is best-effort, ignore failures
+      }
+    }
   },
 });
 
@@ -246,8 +323,17 @@ function normalizeStatus(raw: string): JobStatusValue {
     pending: "pending",
     queued: "queued",
     running: "running",
+    complete: "completed",
     completed: "completed",
+    success: "completed",
+    succeeded: "completed",
+    successful: "completed",
+    done: "completed",
+    finished: "completed",
+    finish: "completed",
+    error: "failed",
     failed: "failed",
+    failure: "failed",
     canceled: "canceled",
     cancelled: "canceled",
   };
@@ -309,20 +395,23 @@ async function parseAnalysisCsvs(
     result.rg = parseCsv(rgCsv, (row, i) => ({
       frame: parseNum(row.frame ?? row.Frame ?? String(i)),
       time: parseNum(row.time ?? row.Time ?? row["#Time"] ?? String(i)),
-      value: parseNum(row.rg ?? row.Rg ?? row.value ?? "0"),
+      value: parseNum(row.rg ?? row.Rg ?? row["Radius of gyration"] ?? row.value ?? "0"),
     })).filter((r) => !isNaN(r.value));
   }
 
   // Energy
   const energyCsv = await get("energyCsv");
   if (energyCsv) {
-    result.energy = parseCsv(energyCsv, (row, i) => ({
-      frame: parseNum(row.frame ?? row.Frame ?? String(i)),
-      time: parseNum(row.time ?? row.Time ?? row["#Time"] ?? row["Time (ps)"] ?? String(i)),
-      potential: parseNum(row.potential ?? row.Potential ?? row.potential_energy ?? row["Potential Energy (kJ/mole)"] ?? "0"),
-      kinetic: parseNum(row.kinetic ?? row.Kinetic ?? row.kinetic_energy ?? row["Kinetic Energy (kJ/mole)"] ?? "0"),
-      total: parseNum(row.total ?? row.Total ?? row.total_energy ?? row["Total Energy (kJ/mole)"] ?? "0"),
-    })).filter((r) => !isNaN(r.potential));
+    result.energy = parseCsv(energyCsv, (row, i) => {
+      const psTime = parseNum(row.time ?? row.Time ?? row["#Time"] ?? row["Time (ps)"] ?? String(i));
+      return {
+        frame: parseNum(row.frame ?? row.Frame ?? String(i)),
+        time: psTime / 1000.0, // OpenMM exports time in ps, so convert to ns
+        potential: parseNum(row.potential ?? row.Potential ?? row.potential_energy ?? row["Potential Energy (kJ/mole)"] ?? "0"),
+        kinetic: parseNum(row.kinetic ?? row.Kinetic ?? row.kinetic_energy ?? row["Kinetic Energy (kJ/mole)"] ?? "0"),
+        total: parseNum(row.total ?? row.Total ?? row.total_energy ?? row["Total Energy (kJ/mole)"] ?? "0"),
+      };
+    }).filter((r) => !isNaN(r.potential));
   }
 
   // Secondary Structure
@@ -334,6 +423,16 @@ async function parseAnalysisCsvs(
       sheet: parseNum(row.sheet ?? row.Sheet ?? row.E ?? "0"),
       coil: parseNum(row.coil ?? row.Coil ?? row.C ?? "0"),
     })).filter((r) => !isNaN(r.frame));
+  }
+
+  // SASA
+  const sasaCsv = await get("sasaCsv");
+  if (sasaCsv) {
+    result.sasa = parseCsv(sasaCsv, (row, i) => ({
+      frame: parseNum(row.frame ?? row.Frame ?? String(i)),
+      time: parseNum(row.time ?? row.Time ?? row["#Time"] ?? String(i)),
+      value: parseNum(row.value ?? row.sasa ?? row["Total SASA"] ?? row.SASA ?? "0"),
+    })).filter((r) => !isNaN(r.value));
   }
 
   return result;

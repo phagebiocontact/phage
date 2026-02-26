@@ -4,51 +4,20 @@ import {
   Legend,
   Line,
   LineChart,
-  Bar,
-  BarChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
-  ReferenceLine,
 } from "recharts";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-// ─── Types (mirror Convex analysisData shape) ─────────────────────────────────
-export interface RmsdPoint {
-  frame: number;
-  time: number;
-  value: number;
-}
-
-export interface RmsfPoint {
-  residue: number;
-  value: number;
-}
-
-export interface RgPoint {
-  frame: number;
-  time: number;
-  value: number;
-}
-
-export interface EnergyPoint {
-  frame: number;
-  time: number;
-  potential: number;
-  kinetic: number;
-  total: number;
-}
-
-export interface SsPoint {
-  frame: number;
-  time?: number;
-  helix: number;
-  sheet: number;
-  coil: number;
-}
+// ─── Types ────────────────────────────────────────────────────────────────────
+export interface RmsdPoint { frame: number; time: number; value: number }
+export interface RmsfPoint { residue: number; value: number }
+export interface RgPoint { frame: number; time: number; value: number }
+export interface EnergyPoint { frame: number; time: number; potential: number; kinetic: number; total: number }
+export interface SsPoint { frame: number; time?: number; helix: number; sheet: number; coil: number }
 
 export interface SimulationAnalysisData {
   rmsd?: RmsdPoint[];
@@ -63,18 +32,26 @@ interface SimulationChartsProps {
   selectedFrame?: number;
   syncEnabled?: boolean;
   onFrameSelect?: (frame: number) => void;
-  /** Download file handlers keyed by artifact key */
   onDownloadPng?: (metric: "rmsd" | "rmsf" | "rg" | "ss" | "energy") => void;
 }
 
 // ─── Custom tooltip ───────────────────────────────────────────────────────────
-const CustomTooltip = ({ active, payload, label, xLabel }: { active?: boolean; payload?: { dataKey: string; color: string; name: string; value: number }[]; label?: string | number; xLabel?: string }) => {
+const CustomTooltip = ({
+  active, payload, label, xLabel,
+}: {
+  active?: boolean;
+  payload?: { dataKey: string; color: string; name: string; value: number }[];
+  label?: string | number;
+  xLabel?: string;
+}) => {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-lg border border-border bg-card/95 backdrop-blur-sm px-3 py-2 text-xs shadow-xl">
-      <p className="text-muted-foreground mb-1 font-medium">{xLabel}: {label}</p>
+    <div className="rounded-lg border border-border/60 bg-card/95 backdrop-blur-sm px-3 py-2 text-xs shadow-xl">
+      <p className="text-muted-foreground mb-1 font-medium">
+        {xLabel}: {typeof label === "number" ? label.toFixed(3) : label}
+      </p>
       {payload.map((p) => (
-        <p key={p.dataKey} style={{ color: p.color }} className="font-semibold">
+        <p key={p.dataKey} style={{ color: p.color }} className="font-semibold font-mono">
           {p.name}: {typeof p.value === "number" ? p.value.toFixed(4) : p.value}
         </p>
       ))}
@@ -84,243 +61,184 @@ const CustomTooltip = ({ active, payload, label, xLabel }: { active?: boolean; p
 
 // ─── Empty state ──────────────────────────────────────────────────────────────
 const EmptyChart = ({ label }: { label: string }) => (
-  <div className="h-[340px] flex flex-col items-center justify-center text-muted-foreground gap-3">
-    <BarChart3 className="h-10 w-10 opacity-20" />
-    <p className="text-sm">{label} data not available</p>
+  <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground/40 py-16">
+    <BarChart3 className="h-7 w-7" />
+    <p className="text-sm">{label} — no data</p>
   </div>
 );
 
-// ─── Common chart wrapper ─────────────────────────────────────────────────────
-function ChartCard({
-  title,
-  description,
-  metric,
-  onDownloadPng,
-  children,
-}: {
-  title: string;
-  description: string;
+// Shared chart constants
+const CHART_MARGIN = { top: 8, right: 24, bottom: 28, left: 8 };
+const TICK = { fontSize: 11, fill: "hsl(var(--muted-foreground))" };
+const GRID = { stroke: "hsl(var(--border))", strokeOpacity: 0.5, strokeDasharray: "3 3" };
+const LSTYLE = { fontSize: 11, fill: "hsl(var(--muted-foreground))" };
+const CHART_H = 300;
+
+// ─── Download button helper ───────────────────────────────────────────────────
+function DownloadBtn({ metric, onDownloadPng }: {
   metric: "rmsd" | "rmsf" | "rg" | "ss" | "energy";
   onDownloadPng?: (m: typeof metric) => void;
-  children: React.ReactNode;
 }) {
+  if (!onDownloadPng) return null;
   return (
-    <Card className="border-border/40 bg-card/50 backdrop-blur-sm">
-      <CardHeader className="pb-2">
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <CardTitle className="text-base">{title}</CardTitle>
-            <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
-          </div>
-          {onDownloadPng && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 px-2 text-xs gap-1.5 shrink-0"
-              onClick={() => onDownloadPng(metric)}
-            >
-              <Download className="h-3 w-3" />
-              PNG
-            </Button>
-          )}
-        </div>
-      </CardHeader>
-      <CardContent>{children}</CardContent>
-    </Card>
+    <Button variant="ghost" size="sm"
+      className="h-7 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground"
+      onClick={() => onDownloadPng(metric)}>
+      <Download className="h-3 w-3" /> PNG
+    </Button>
   );
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export function SimulationCharts({
   data,
-  selectedFrame,
-  syncEnabled,
-  onFrameSelect,
   onDownloadPng,
 }: SimulationChartsProps) {
-  const chartHeight = 340;
-  const frameRefLine =
-    selectedFrame !== undefined && syncEnabled ? selectedFrame : undefined;
+  const ssHasTime = !!data.ss?.[0]?.time;
 
   return (
-    <Tabs defaultValue="rmsd" className="w-full">
-      <TabsList className="grid w-full grid-cols-5 mb-4">
-        <TabsTrigger value="rmsd">RMSD</TabsTrigger>
-        <TabsTrigger value="rmsf">RMSF</TabsTrigger>
-        <TabsTrigger value="energy">Energy</TabsTrigger>
-        <TabsTrigger value="rg">Rg</TabsTrigger>
-        <TabsTrigger value="ss">Sec. Struct.</TabsTrigger>
-      </TabsList>
+    <div className="space-y-4">
+      <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wider px-1">
+        Analysis Charts
+      </p>
 
       {/* RMSD */}
-      <TabsContent value="rmsd">
-        <ChartCard
-          title="Root Mean Square Deviation (RMSD)"
-          description="Structural deviation from initial conformation over time"
-          metric="rmsd"
-          onDownloadPng={onDownloadPng}
-        >
+      <Card className="border-border/40 bg-card/50 backdrop-blur-sm">
+        <CardHeader className="py-3 px-4 border-b border-border/20">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-semibold">RMSD — Structural Deviation (Å)</CardTitle>
+            {data.rmsd?.length && <DownloadBtn metric="rmsd" onDownloadPng={onDownloadPng} />}
+          </div>
+        </CardHeader>
+        <CardContent className="p-4">
           {data.rmsd?.length ? (
-            <ResponsiveContainer width="100%" height={chartHeight}>
-              <LineChart
-                data={data.rmsd}
-                onClick={(e) => {
-                  if (e?.activePayload?.[0] && onFrameSelect) {
-                    onFrameSelect(e.activePayload[0].payload.frame);
-                  }
-                }}
-                className={onFrameSelect ? "cursor-pointer" : ""}
-              >
-                <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
-                <XAxis dataKey="time" tickFormatter={(v) => `${Number(v).toFixed(2)}`} label={{ value: "Time (ns)", position: "insideBottom", offset: -5 }} tick={{ fontSize: 11 }} />
-                <YAxis label={{ value: "RMSD (Å)", angle: -90, position: "insideLeft", offset: 10 }} tick={{ fontSize: 11 }} />
+            <ResponsiveContainer width="100%" height={CHART_H}>
+              <LineChart data={data.rmsd} margin={CHART_MARGIN}>
+                <CartesianGrid {...GRID} />
+                <XAxis dataKey="time" tickFormatter={v => Number(v).toFixed(2)} tick={TICK}
+                  label={{ value: "Time (ns)", position: "insideBottom", offset: -12, ...LSTYLE }} />
+                <YAxis tick={TICK} width={48}
+                  label={{ value: "Å", angle: -90, position: "insideLeft", offset: 14, ...LSTYLE }} />
                 <Tooltip content={<CustomTooltip xLabel="Time (ns)" />} />
-                <Legend />
-                {frameRefLine !== undefined && (
-                  <ReferenceLine x={frameRefLine} stroke="hsl(var(--primary))" strokeDasharray="4 2" strokeWidth={2} />
-                )}
-                <Line type="monotone" dataKey="value" stroke="hsl(var(--primary))" strokeWidth={1.5} dot={false} name="RMSD (Å)" />
+                <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                <Line type="monotone" dataKey="value" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} name="RMSD (Å)" />
               </LineChart>
             </ResponsiveContainer>
-          ) : (
-            <EmptyChart label="RMSD" />
-          )}
-        </ChartCard>
-      </TabsContent>
-
-      {/* RMSF */}
-      <TabsContent value="rmsf">
-        <ChartCard
-          title="Root Mean Square Fluctuation (RMSF)"
-          description="Per-residue flexibility across the trajectory"
-          metric="rmsf"
-          onDownloadPng={onDownloadPng}
-        >
-          {data.rmsf?.length ? (
-            <ResponsiveContainer width="100%" height={chartHeight}>
-              <LineChart data={data.rmsf}>
-                <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
-                <XAxis dataKey="residue" label={{ value: "Residue", position: "insideBottom", offset: -5 }} tick={{ fontSize: 11 }} />
-                <YAxis label={{ value: "RMSF (Å)", angle: -90, position: "insideLeft", offset: 10 }} tick={{ fontSize: 11 }} />
-                <Tooltip content={<CustomTooltip xLabel="Residue" />} />
-                <Legend />
-                <Line type="monotone" dataKey="value" stroke="hsl(var(--chart-2))" strokeWidth={1.5} dot={false} name="RMSF (Å)" />
-              </LineChart>
-            </ResponsiveContainer>
-          ) : (
-            <EmptyChart label="RMSF" />
-          )}
-        </ChartCard>
-      </TabsContent>
+          ) : <EmptyChart label="RMSD" />}
+        </CardContent>
+      </Card>
 
       {/* Energy */}
-      <TabsContent value="energy">
-        <ChartCard
-          title="System Energy"
-          description="Potential, kinetic, and total energy over simulation frames"
-          metric="energy"
-          onDownloadPng={onDownloadPng}
-        >
+      <Card className="border-border/40 bg-card/50 backdrop-blur-sm">
+        <CardHeader className="py-3 px-4 border-b border-border/20">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-semibold">System Energy (kJ/mol)</CardTitle>
+            {data.energy?.length && <DownloadBtn metric="energy" onDownloadPng={onDownloadPng} />}
+          </div>
+        </CardHeader>
+        <CardContent className="p-4">
           {data.energy?.length ? (
-            <ResponsiveContainer width="100%" height={chartHeight}>
-              <LineChart
-                data={data.energy}
-                onClick={(e) => {
-                  if (e?.activePayload?.[0] && onFrameSelect) {
-                    onFrameSelect(e.activePayload[0].payload.frame);
-                  }
-                }}
-                className={onFrameSelect ? "cursor-pointer" : ""}
-              >
-                <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
-                <XAxis dataKey="time" tickFormatter={(v) => `${Number(v).toFixed(2)}`} label={{ value: "Time (ns)", position: "insideBottom", offset: -5 }} tick={{ fontSize: 11 }} />
-                <YAxis label={{ value: "Energy (kJ/mol)", angle: -90, position: "insideLeft", offset: 14 }} tick={{ fontSize: 11 }} />
+            <ResponsiveContainer width="100%" height={CHART_H}>
+              <LineChart data={data.energy} margin={CHART_MARGIN}>
+                <CartesianGrid {...GRID} />
+                <XAxis dataKey="time" tickFormatter={v => Number(v).toFixed(2)} tick={TICK}
+                  label={{ value: "Time (ns)", position: "insideBottom", offset: -12, ...LSTYLE }} />
+                <YAxis tick={TICK} width={64}
+                  label={{ value: "kJ/mol", angle: -90, position: "insideLeft", offset: 20, ...LSTYLE }} />
                 <Tooltip content={<CustomTooltip xLabel="Time (ns)" />} />
-                <Legend />
-                {frameRefLine !== undefined && (
-                  <ReferenceLine x={frameRefLine} stroke="hsl(var(--primary))" strokeDasharray="4 2" strokeWidth={2} />
-                )}
-                <Line type="monotone" dataKey="potential" stroke="hsl(var(--chart-3))" strokeWidth={1.5} dot={false} name="Potential (kJ/mol)" />
-                <Line type="monotone" dataKey="kinetic" stroke="hsl(var(--chart-4))" strokeWidth={1.5} dot={false} name="Kinetic (kJ/mol)" />
-                <Line type="monotone" dataKey="total" stroke="hsl(var(--chart-5))" strokeWidth={1.5} dot={false} name="Total (kJ/mol)" />
+                <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                <Line type="monotone" dataKey="potential" stroke="hsl(var(--chart-3))" strokeWidth={2} dot={false} name="Potential" />
+                <Line type="monotone" dataKey="kinetic" stroke="hsl(var(--chart-4))" strokeWidth={2} dot={false} name="Kinetic" />
+                <Line type="monotone" dataKey="total" stroke="hsl(var(--chart-5))" strokeWidth={2} dot={false} name="Total" />
               </LineChart>
             </ResponsiveContainer>
-          ) : (
-            <EmptyChart label="Energy" />
-          )}
-        </ChartCard>
-      </TabsContent>
+          ) : <EmptyChart label="Energy" />}
+        </CardContent>
+      </Card>
 
-      {/* Radius of Gyration */}
-      <TabsContent value="rg">
-        <ChartCard
-          title="Radius of Gyration (Rg)"
-          description="Protein compactness measure over the trajectory"
-          metric="rg"
-          onDownloadPng={onDownloadPng}
-        >
+      {/* Rg */}
+      <Card className="border-border/40 bg-card/50 backdrop-blur-sm">
+        <CardHeader className="py-3 px-4 border-b border-border/20">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-semibold">Radius of Gyration (Å)</CardTitle>
+            {data.rg?.length && <DownloadBtn metric="rg" onDownloadPng={onDownloadPng} />}
+          </div>
+        </CardHeader>
+        <CardContent className="p-4">
           {data.rg?.length ? (
-            <ResponsiveContainer width="100%" height={chartHeight}>
-              <LineChart
-                data={data.rg}
-                onClick={(e) => {
-                  if (e?.activePayload?.[0] && onFrameSelect) {
-                    onFrameSelect(e.activePayload[0].payload.frame);
-                  }
-                }}
-                className={onFrameSelect ? "cursor-pointer" : ""}
-              >
-                <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
-                <XAxis dataKey="time" tickFormatter={(v) => `${Number(v).toFixed(2)}`} label={{ value: "Time (ns)", position: "insideBottom", offset: -5 }} tick={{ fontSize: 11 }} />
-                <YAxis label={{ value: "Rg (Å)", angle: -90, position: "insideLeft", offset: 10 }} tick={{ fontSize: 11 }} />
+            <ResponsiveContainer width="100%" height={CHART_H}>
+              <LineChart data={data.rg} margin={CHART_MARGIN}>
+                <CartesianGrid {...GRID} />
+                <XAxis dataKey="time" tickFormatter={v => Number(v).toFixed(2)} tick={TICK}
+                  label={{ value: "Time (ns)", position: "insideBottom", offset: -12, ...LSTYLE }} />
+                <YAxis tick={TICK} width={48}
+                  label={{ value: "Å", angle: -90, position: "insideLeft", offset: 14, ...LSTYLE }} />
                 <Tooltip content={<CustomTooltip xLabel="Time (ns)" />} />
-                <Legend />
-                {frameRefLine !== undefined && (
-                  <ReferenceLine x={frameRefLine} stroke="hsl(var(--primary))" strokeDasharray="4 2" strokeWidth={2} />
-                )}
-                <Line type="monotone" dataKey="value" stroke="hsl(var(--chart-1))" strokeWidth={1.5} dot={false} name="Rg (Å)" />
+                <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                <Line type="monotone" dataKey="value" stroke="hsl(var(--secondary))" strokeWidth={2} dot={false} name="Rg (Å)" />
               </LineChart>
             </ResponsiveContainer>
-          ) : (
-            <EmptyChart label="Radius of Gyration" />
-          )}
-        </ChartCard>
-      </TabsContent>
+          ) : <EmptyChart label="Radius of Gyration" />}
+        </CardContent>
+      </Card>
 
       {/* Secondary Structure */}
-      <TabsContent value="ss">
-        <ChartCard
-          title="Secondary Structure Content"
-          description="Fraction of helix, sheet, and coil per frame"
-          metric="ss"
-          onDownloadPng={onDownloadPng}
-        >
+      <Card className="border-border/40 bg-card/50 backdrop-blur-sm">
+        <CardHeader className="py-3 px-4 border-b border-border/20">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-semibold">Secondary Structure — Residue Count</CardTitle>
+            {data.ss?.length && <DownloadBtn metric="ss" onDownloadPng={onDownloadPng} />}
+          </div>
+        </CardHeader>
+        <CardContent className="p-4">
           {data.ss?.length ? (
-            <ResponsiveContainer width="100%" height={chartHeight}>
-              <BarChart
-                data={data.ss}
-                onClick={(e) => {
-                  if (e?.activePayload?.[0] && onFrameSelect) {
-                    onFrameSelect(e.activePayload[0].payload.frame);
-                  }
-                }}
-                className={onFrameSelect ? "cursor-pointer" : ""}
-              >
-                <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
-                <XAxis dataKey="time" tickFormatter={(v) => v != null ? `${Number(v).toFixed(2)}` : String(v)} label={{ value: "Time (ns)", position: "insideBottom", offset: -5 }} tick={{ fontSize: 11 }} />
-                <YAxis label={{ value: "Count", angle: -90, position: "insideLeft", offset: 10 }} tick={{ fontSize: 11 }} />
-                <Tooltip content={<CustomTooltip xLabel="Time (ns)" />} />
-                <Legend />
-                <Bar dataKey="helix" stackId="ss" fill="#6366f1" name="Helix" />
-                <Bar dataKey="sheet" stackId="ss" fill="#22d3ee" name="Sheet" />
-                <Bar dataKey="coil" stackId="ss" fill="#a3a3a3" name="Coil" />
-              </BarChart>
+            <ResponsiveContainer width="100%" height={CHART_H}>
+              <LineChart data={data.ss} margin={CHART_MARGIN}>
+                <CartesianGrid {...GRID} />
+                <XAxis
+                  dataKey={ssHasTime ? "time" : "frame"}
+                  tickFormatter={v => ssHasTime ? Number(v).toFixed(2) : String(v)}
+                  tick={TICK}
+                  label={{ value: ssHasTime ? "Time (ns)" : "Frame", position: "insideBottom", offset: -12, ...LSTYLE }}
+                />
+                <YAxis tick={TICK} width={40}
+                  label={{ value: "Count", angle: -90, position: "insideLeft", offset: 14, ...LSTYLE }} />
+                <Tooltip content={<CustomTooltip xLabel={ssHasTime ? "Time (ns)" : "Frame"} />} />
+                <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                <Line type="monotone" dataKey="helix" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} name="Helix" />
+                <Line type="monotone" dataKey="sheet" stroke="hsl(var(--secondary))" strokeWidth={2} dot={false} name="Sheet" />
+                <Line type="monotone" dataKey="coil" stroke="hsl(var(--muted-foreground))" strokeWidth={2} dot={false} name="Coil" opacity={0.6} />
+              </LineChart>
             </ResponsiveContainer>
-          ) : (
-            <EmptyChart label="Secondary Structure" />
-          )}
-        </ChartCard>
-      </TabsContent>
-    </Tabs>
+          ) : <EmptyChart label="Secondary Structure" />}
+        </CardContent>
+      </Card>
+
+      {/* RMSF */}
+      <Card className="border-border/40 bg-card/50 backdrop-blur-sm">
+        <CardHeader className="py-3 px-4 border-b border-border/20">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-semibold">RMSF — Per-Residue Flexibility (Å)</CardTitle>
+            {data.rmsf?.length && <DownloadBtn metric="rmsf" onDownloadPng={onDownloadPng} />}
+          </div>
+        </CardHeader>
+        <CardContent className="p-4">
+          {data.rmsf?.length ? (
+            <ResponsiveContainer width="100%" height={CHART_H}>
+              <LineChart data={data.rmsf} margin={CHART_MARGIN}>
+                <CartesianGrid {...GRID} />
+                <XAxis dataKey="residue" tick={TICK}
+                  label={{ value: "Residue", position: "insideBottom", offset: -12, ...LSTYLE }} />
+                <YAxis tick={TICK} width={48}
+                  label={{ value: "Å", angle: -90, position: "insideLeft", offset: 14, ...LSTYLE }} />
+                <Tooltip content={<CustomTooltip xLabel="Residue" />} />
+                <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                <Line type="monotone" dataKey="value" stroke="hsl(var(--accent))" strokeWidth={2} dot={false} name="RMSF (Å)" />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : <EmptyChart label="RMSF" />}
+        </CardContent>
+      </Card>
+    </div>
   );
 }
