@@ -68,11 +68,11 @@ const EmptyChart = ({ label }: { label: string }) => (
 );
 
 // Shared chart constants
-const CHART_MARGIN = { top: 8, right: 24, bottom: 28, left: 8 };
+const CHART_MARGIN = { top: 25, right: 20, bottom: 35, left: 0 };
 const TICK = { fontSize: 11, fill: "hsl(var(--muted-foreground))" };
 const GRID = { stroke: "hsl(var(--border))", strokeOpacity: 0.5, strokeDasharray: "3 3" };
 const LSTYLE = { fontSize: 11, fill: "hsl(var(--muted-foreground))" };
-const CHART_H = 300;
+const CHART_H = 340;
 
 // ─── Download button helper ───────────────────────────────────────────────────
 function DownloadBtn({ metric, onDownloadPng }: {
@@ -117,10 +117,10 @@ export function SimulationCharts({
                 <CartesianGrid {...GRID} />
                 <XAxis dataKey="time" tickFormatter={v => Number(v).toFixed(2)} tick={TICK}
                   label={{ value: "Time (ns)", position: "insideBottom", offset: -12, ...LSTYLE }} />
-                <YAxis tick={TICK} width={48}
-                  label={{ value: "Å", angle: -90, position: "insideLeft", offset: 14, ...LSTYLE }} />
+                <YAxis tick={TICK} width={56}
+                  label={{ value: "Å", angle: -90, position: "insideLeft", offset: 12, ...LSTYLE }} />
                 <Tooltip content={<CustomTooltip xLabel="Time (ns)" />} />
-                <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: 12, paddingBottom: 20 }} />
                 <Line type="monotone" dataKey="value" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} name="RMSD (Å)" />
               </LineChart>
             </ResponsiveContainer>
@@ -143,10 +143,10 @@ export function SimulationCharts({
                 <CartesianGrid {...GRID} />
                 <XAxis dataKey="time" tickFormatter={v => Number(v).toFixed(2)} tick={TICK}
                   label={{ value: "Time (ns)", position: "insideBottom", offset: -12, ...LSTYLE }} />
-                <YAxis tick={TICK} width={64}
-                  label={{ value: "kJ/mol", angle: -90, position: "insideLeft", offset: 20, ...LSTYLE }} />
+                <YAxis tick={TICK} width={70}
+                  label={{ value: "kJ/mol", angle: -90, position: "insideLeft", offset: 12, ...LSTYLE }} />
                 <Tooltip content={<CustomTooltip xLabel="Time (ns)" />} />
-                <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: 12, paddingBottom: 20 }} />
                 <Line type="monotone" dataKey="potential" stroke="hsl(var(--chart-3))" strokeWidth={2} dot={false} name="Potential" />
                 <Line type="monotone" dataKey="kinetic" stroke="hsl(var(--chart-4))" strokeWidth={2} dot={false} name="Kinetic" />
                 <Line type="monotone" dataKey="total" stroke="hsl(var(--chart-5))" strokeWidth={2} dot={false} name="Total" />
@@ -171,10 +171,10 @@ export function SimulationCharts({
                 <CartesianGrid {...GRID} />
                 <XAxis dataKey="time" tickFormatter={v => Number(v).toFixed(2)} tick={TICK}
                   label={{ value: "Time (ns)", position: "insideBottom", offset: -12, ...LSTYLE }} />
-                <YAxis tick={TICK} width={48}
-                  label={{ value: "Å", angle: -90, position: "insideLeft", offset: 14, ...LSTYLE }} />
+                <YAxis tick={TICK} width={56}
+                  label={{ value: "Å", angle: -90, position: "insideLeft", offset: 12, ...LSTYLE }} />
                 <Tooltip content={<CustomTooltip xLabel="Time (ns)" />} />
-                <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: 12, paddingBottom: 20 }} />
                 <Line type="monotone" dataKey="value" stroke="hsl(var(--secondary))" strokeWidth={2} dot={false} name="Rg (Å)" />
               </LineChart>
             </ResponsiveContainer>
@@ -201,10 +201,10 @@ export function SimulationCharts({
                   tick={TICK}
                   label={{ value: ssHasTime ? "Time (ns)" : "Frame", position: "insideBottom", offset: -12, ...LSTYLE }}
                 />
-                <YAxis tick={TICK} width={40}
-                  label={{ value: "Count", angle: -90, position: "insideLeft", offset: 14, ...LSTYLE }} />
+                <YAxis tick={TICK} width={56}
+                  label={{ value: "Count", angle: -90, position: "insideLeft", offset: 12, ...LSTYLE }} />
                 <Tooltip content={<CustomTooltip xLabel={ssHasTime ? "Time (ns)" : "Frame"} />} />
-                <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: 12, paddingBottom: 20 }} />
                 <Line type="monotone" dataKey="helix" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} name="Helix" />
                 <Line type="monotone" dataKey="sheet" stroke="hsl(var(--secondary))" strokeWidth={2} dot={false} name="Sheet" />
                 <Line type="monotone" dataKey="coil" stroke="hsl(var(--muted-foreground))" strokeWidth={2} dot={false} name="Coil" opacity={0.6} />
@@ -229,10 +229,10 @@ export function SimulationCharts({
                 <CartesianGrid {...GRID} />
                 <XAxis dataKey="residue" tick={TICK}
                   label={{ value: "Residue", position: "insideBottom", offset: -12, ...LSTYLE }} />
-                <YAxis tick={TICK} width={48}
-                  label={{ value: "Å", angle: -90, position: "insideLeft", offset: 14, ...LSTYLE }} />
+                <YAxis tick={TICK} width={56}
+                  label={{ value: "Å", angle: -90, position: "insideLeft", offset: 12, ...LSTYLE }} />
                 <Tooltip content={<CustomTooltip xLabel="Residue" />} />
-                <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: 12, paddingBottom: 20 }} />
                 <Line type="monotone" dataKey="value" stroke="hsl(var(--accent))" strokeWidth={2} dot={false} name="RMSF (Å)" />
               </LineChart>
             </ResponsiveContainer>

@@ -75,6 +75,7 @@
     "vite": "^8.0.0-beta.15",
     "vite-plugin-compression2": "^2.4.0",
     "vite-plugin-image-optimizer": "^2.0.3",
+    "vite-plugin-imagemin": "^0.6.1",
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^3.2.4"
   },

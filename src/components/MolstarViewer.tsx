@@ -1,6 +1,6 @@
 "use client";
 import type { PluginUIContext } from "molstar/lib/mol-plugin-ui/context";
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { MODAL_API_URL } from "@/hooks/useSimulationWs";
 
 interface MolstarViewerProps {
@@ -10,6 +10,8 @@ interface MolstarViewerProps {
   livePdbBase64?: string;       // Live: base64-encoded PDB snapshot
   className?: string;
   onFrameChange?: (frame: number, total: number) => void;
+  shouldRotate?: boolean;
+  pdbId?: string;
 }
 
 export interface MolstarViewerRef {
@@ -18,6 +20,8 @@ export interface MolstarViewerRef {
   setFrame: (frame: number) => void;
   play: () => void;
   pause: () => void;
+  setIsRotating: (isRotating: boolean) => void;
+  setColor: (type: "chain" | "element" | "rainbow") => void;
 }
 
 async function initPlugin(container: HTMLDivElement): Promise<PluginUIContext> {
@@ -159,7 +163,7 @@ async function getFramePdb(jobId: string, frameIndex: number): Promise<string> {
 }
 // ──────────────────────────────────────────────────────────────────────────────
 
-async function loadPdbString(plugin: PluginUIContext, pdbString: string, dataNodeRef?: unknown) {
+async function loadPdbString(plugin: PluginUIContext, pdbString: string, dataNodeRef?: any) {
   if (dataNodeRef) {
     // Update existing data node in place (smooth live update)
     await plugin.build().to(dataNodeRef).update({ data: pdbString }).commit();
@@ -203,13 +207,13 @@ async function loadPdbFromUrl(plugin: PluginUIContext, url: string) {
 }
 
 const MolstarViewer = forwardRef<MolstarViewerRef, MolstarViewerProps>(
-  ({ structureUrl, modalJobId, livePdbBase64, className, onFrameChange }, ref) => {
+  ({ structureUrl, modalJobId, livePdbBase64, className, onFrameChange, shouldRotate = false, pdbId }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const pluginRef = useRef<PluginUIContext | null>(null);
     const initDoneRef = useRef(false);
 
     // Trajectory playback state
-    const dataNodeRef = useRef<unknown>(null);      // current Molstar data node (for in-place update)
+    const dataNodeRef = useRef<any>(null);      // current Molstar data node (for in-place update)
     const loadedKeyRef = useRef<string | null>(null);
     const totalFramesRef = useRef(0);
     const currentFrameRef = useRef(0);
@@ -219,6 +223,8 @@ const MolstarViewer = forwardRef<MolstarViewerRef, MolstarViewerProps>(
 
     const onFrameChangeRef = useRef(onFrameChange);
     onFrameChangeRef.current = onFrameChange;
+    const shouldRotateRef = useRef(shouldRotate);
+    shouldRotateRef.current = shouldRotate;
 
     // Pre-fetch the next N frames in the background
     const prefetchAhead = (jobId: string, fromFrame: number, total: number, count = 5) => {
@@ -306,6 +312,33 @@ const MolstarViewer = forwardRef<MolstarViewerRef, MolstarViewerProps>(
       pause: () => {
         stopPlayback();
       },
+      setIsRotating: (isRotating: boolean) => {
+        const plugin = pluginRef.current;
+        if (!plugin || !plugin.canvas3d) return;
+        plugin.canvas3d.setProps({
+          trackball: {
+            ...plugin.canvas3d.props.trackball,
+            animate: isRotating ? { name: "spin" as const, params: { speed: 0.1 } } : { name: "off" as const, params: {} }
+          }
+        });
+      },
+      setColor: async (type) => {
+        const plugin = pluginRef.current;
+        if (!plugin) return;
+        const structs = plugin.managers.structure.hierarchy.current.structures;
+        if (!structs?.length) return;
+
+        const themeMap: Record<string, string> = {
+          chain: "chain-id",
+          element: "element-symbol",
+          rainbow: "sequence-id",
+        };
+
+        await plugin.managers.structure.component.applyTheme({
+          color: { name: themeMap[type] },
+          structures: structs,
+        } as any);
+      },
     }));
 
     const modalJobIdRef = useRef(modalJobId);
@@ -314,6 +347,8 @@ const MolstarViewer = forwardRef<MolstarViewerRef, MolstarViewerProps>(
     structureUrlRef.current = structureUrl;
     const livePdbBase64Ref = useRef(livePdbBase64);
     livePdbBase64Ref.current = livePdbBase64;
+    const pdbIdRef = useRef(pdbId);
+    pdbIdRef.current = pdbId;
 
     // Initialize Molstar plugin once
     useEffect(() => {
@@ -328,9 +363,20 @@ const MolstarViewer = forwardRef<MolstarViewerRef, MolstarViewerProps>(
         const jobId = modalJobIdRef.current;
         const sUrl = structureUrlRef.current;
         const b64 = livePdbBase64Ref.current;
+        const pId = pdbIdRef.current;
 
         if (jobId) {
           await initTrajectoryFromApi(jobId, mounted);
+        } else if (pId) {
+          loadedKeyRef.current = `pdb:${pId}`;
+          await loadPdbFromUrl(plugin, `https://files.rcsb.org/download/${pId.toUpperCase()}.pdb`).catch(console.warn);
+          onFrameChangeRef.current?.(0, 1);
+          // Re-apply rotation after load
+          if (shouldRotateRef.current && plugin.canvas3d) {
+            plugin.canvas3d.setProps({
+              trackball: { ...plugin.canvas3d.props.trackball, animate: { name: "spin" as const, params: { speed: 0.1 } } }
+            });
+          }
         } else if (sUrl) {
           loadedKeyRef.current = sUrl;
           await loadPdbFromUrl(plugin, sUrl).catch(console.warn);
@@ -378,6 +424,13 @@ const MolstarViewer = forwardRef<MolstarViewerRef, MolstarViewerProps>(
         if (mounted && total > 1) {
           startPlayback(jobId, 8);
         }
+
+        // Re-apply rotation after trajectory load
+        if (shouldRotateRef.current && plugin.canvas3d) {
+          plugin.canvas3d.setProps({
+            trackball: { ...plugin.canvas3d.props.trackball, animate: { name: "spin" as const, params: { speed: 0.1 } } }
+          });
+        }
       } catch (err) {
         console.warn("Trajectory frame API failed:", err);
         // Fallback to static PDB URL
@@ -421,9 +474,42 @@ const MolstarViewer = forwardRef<MolstarViewerRef, MolstarViewerProps>(
       const binary = atob(livePdbBase64);
       const pdbStr = new TextDecoder().decode(new Uint8Array([...binary].map(c => c.charCodeAt(0))));
       loadPdbString(plugin, pdbStr, dataNodeRef.current)
-        .then(node => { dataNodeRef.current = node; })
+        .then(node => {
+          dataNodeRef.current = node;
+          if (shouldRotateRef.current && plugin.canvas3d) {
+            plugin.canvas3d.setProps({
+              trackball: { ...plugin.canvas3d.props.trackball, animate: { name: "spin" as const, params: { speed: 0.1 } } }
+            });
+          }
+        })
         .catch(console.warn);
     }, [livePdbBase64]);
+
+    // React to pdbId changes
+    useEffect(() => {
+      const plugin = pluginRef.current;
+      if (!pdbId || modalJobId || !plugin) return;
+      const key = `pdb:${pdbId}`;
+      if (loadedKeyRef.current === key) return;
+      loadedKeyRef.current = key;
+      dataNodeRef.current = null;
+      loadPdbFromUrl(plugin, `https://files.rcsb.org/download/${pdbId.toUpperCase()}.pdb`)
+        .then(() => onFrameChangeRef.current?.(0, 1))
+        .catch(console.warn);
+    }, [pdbId, modalJobId]);
+
+    // Handle shouldRotate prop
+    useEffect(() => {
+      shouldRotateRef.current = shouldRotate;
+      const plugin = pluginRef.current;
+      if (!plugin || !plugin.canvas3d) return;
+      plugin.canvas3d.setProps({
+        trackball: {
+          ...plugin.canvas3d.props.trackball,
+          animate: shouldRotate ? { name: "spin" as const, params: { speed: 0.1 } } : { name: "off" as const, params: {} }
+        }
+      });
+    }, [shouldRotate]);
 
     return (
       <div

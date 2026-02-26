@@ -270,7 +270,7 @@ function Features() {
 							transition={{ delay: 0.4 }}
 							className="text-muted-foreground text-base sm:text-lg md:text-xl leading-relaxed max-w-2xl mx-auto"
 						>
-							Comparison tables, accuracy benchmarks, and security guarantees — all in one place.
+							Everything required for modern MD research all in one place.
 						</motion.p>
 					</motion.div>
 				</div>

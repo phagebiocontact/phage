@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
 
 // Caps the visual data array to MAX_POINTS to prevent Recharts SVG memory crashes
 export function downsample<T>(data: T[] | undefined, maxPoints: number = 200): T[] {
@@ -41,6 +40,7 @@ export interface LiveAnalysisPoint {
   potential?: number;
   kinetic?: number;
   total?: number;
+  rmsf?: number[]; // per-CA displacement from reference (Å)
 }
 
 interface UseSimulationWsOptions {

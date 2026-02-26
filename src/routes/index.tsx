@@ -33,35 +33,35 @@ const tourSections = [
 		tag: "Upload",
 		title: "Drag. Drop. Simulate.",
 		description: "Upload PDB or SDF files directly in your browser. Auto-detected chains, validated geometry, topology prepared — zero CLI work.",
-		placeholder: "simulation_upload",
+		image: "/1.png",
 		align: "left" as const,
 	},
 	{
 		tag: "Configure",
 		title: "One-Click Launch on H100 GPUs",
 		description: "Set simulation length, temperature, pressure, and force field. One click allocates a GPU, builds the solvated system, and starts production.",
-		placeholder: "simulation_config",
+		image: "/5.png",
 		align: "right" as const,
 	},
 	{
 		tag: "Monitor",
 		title: "Real-Time Progress Tracking",
 		description: "Watch potential energy, temperature, and density converge live. No SSH tunnels, no SLURM — just open your browser.",
-		placeholder: "job_monitoring",
+		image: "/sim.gif",
 		align: "left" as const,
 	},
 	{
 		tag: "Analyze",
 		title: "Publication-Ready Analysis",
 		description: "Automated RMSD, RMSF, Rg, SASA, and DSSP plots. Interactive Mol* trajectory viewer. Download SVGs directly into your manuscript.",
-		placeholder: "analysis_results",
+		image: "/2.png",
 		align: "right" as const,
 	},
 	{
 		tag: "Collaborate",
 		title: "Access Anywhere. Share Instantly.",
 		description: "Results stored securely in the cloud. Access from any device. Share simulation data with collaborators — no file transfer hassles.",
-		placeholder: "collaboration_share",
+		image: "/8.png",
 		align: "left" as const,
 	},
 ];
@@ -251,6 +251,7 @@ function Index() {
 												ref={molstarRef}
 												pdbId="1AOI"
 												className="w-full h-full"
+												shouldRotate={true}
 											/>
 										</Suspense>
 									</div>
@@ -325,23 +326,22 @@ function Index() {
 									style={{ perspective: 1200, transformStyle: "preserve-3d" }}
 								>
 									<div className="absolute -inset-4 rounded-3xl bg-primary/8 blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-									<div className="relative aspect-[4/3] rounded-2xl overflow-hidden border border-border/30 bg-background/40 backdrop-blur-sm shadow-[0_8px_30px_rgba(0,0,0,0.3)] group-hover:shadow-[0_20px_60px_rgba(0,0,0,0.4)] transition-shadow duration-500">
-										<div className="absolute inset-0 bg-[radial-gradient(#ffffff06_1px,transparent_1px)] [background-size:16px_16px]" />
-										<div className="absolute inset-x-0 top-0 h-8 bg-white/5 backdrop-blur-sm flex items-center px-4 gap-2 z-10">
+									<div className="relative rounded-2xl overflow-hidden border border-border/30 bg-background/40 backdrop-blur-sm shadow-[0_8px_30px_rgba(0,0,0,0.3)] group-hover:shadow-[0_20px_60px_rgba(0,0,0,0.4)] transition-shadow duration-500">
+										<div className="absolute inset-x-0 top-0 h-8 bg-black/40 backdrop-blur-md flex items-center px-4 gap-2 z-20 border-b border-white/5">
 											<div className="flex gap-1.5">
-												<div className="w-2 h-2 rounded-full bg-red-500/30" />
-												<div className="w-2 h-2 rounded-full bg-yellow-500/30" />
-												<div className="w-2 h-2 rounded-full bg-green-500/30" />
+												<div className="w-2 h-2 rounded-full bg-red-500/40" />
+												<div className="w-2 h-2 rounded-full bg-yellow-500/40" />
+												<div className="w-2 h-2 rounded-full bg-green-500/40" />
 											</div>
-											<span className="flex-1 text-center text-[9px] font-mono text-white/30 uppercase tracking-widest">{section.placeholder}</span>
+											<span className="flex-1 text-center text-[9px] font-mono text-white/40 uppercase tracking-widest">{section.tag} View</span>
 										</div>
-										<div className="flex items-center justify-center h-full pt-8">
-											<div className="text-center">
-												<div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
-													<FlaskConical className="w-7 h-7 text-primary/50" />
-												</div>
-												<span className="text-xs text-muted-foreground/40 font-mono">screenshot placeholder</span>
-											</div>
+										<div className="relative pt-8 bg-black/5">
+											<img
+												src={section.image}
+												alt={section.title}
+												className="w-full h-auto block transition-transform duration-700 group-hover:scale-[1.01]"
+											/>
+											<div className="absolute inset-0 bg-gradient-to-t from-background/20 via-transparent to-transparent opacity-40 pointer-events-none" />
 										</div>
 									</div>
 								</motion.div>

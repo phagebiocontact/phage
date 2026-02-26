@@ -6,7 +6,6 @@ interface LogViewerProps {
   maxHeight?: string;
   autoScroll?: boolean;
   isLive?: boolean;
-  lineCount?: number;
 }
 
 export function LogViewer({
@@ -16,20 +15,17 @@ export function LogViewer({
   isLive = false,
 }: LogViewerProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef(content);
-  contentRef.current = content;
 
-  // Stable scroll-to-bottom: trigger on every render when live
   useEffect(() => {
     if (!autoScroll) return;
-    const id1 = requestAnimationFrame(() => {
+    const id = requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         if (scrollRef.current) {
           scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
         }
       });
     });
-    return () => cancelAnimationFrame(id1);
+    return () => cancelAnimationFrame(id);
   });
 
   const lines = content ? content.split("\n") : [];
@@ -44,43 +40,34 @@ export function LogViewer({
   }
 
   return (
-    <div
-      className="rounded-xl overflow-hidden font-mono text-xs"
-      style={{
-        background: "linear-gradient(135deg, #0a0f1e 0%, #0d1117 100%)",
-        border: "1px solid rgba(99,102,241,0.2)",
-        boxShadow: "0 0 0 1px rgba(99,102,241,0.05), 0 8px 32px rgba(0,0,0,0.5)",
-      }}
+    <div className="rounded-xl overflow-hidden font-mono text-xs bg-muted/30 border border-border/40"
+      style={{ boxShadow: "0 4px 24px hsl(var(--primary) / 0.06)" }}
     >
-      <div
-        className="flex items-center gap-2 px-4 py-2.5"
-        style={{
-          background: "rgba(255,255,255,0.03)",
-          borderBottom: "1px solid rgba(99,102,241,0.15)",
-        }}
-      >
+      {/* Title bar */}
+      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border/40 bg-muted/40">
         <div className="flex items-center gap-1.5">
-          <span className="h-3 w-3 rounded-full bg-red-500/80" />
-          <span className="h-3 w-3 rounded-full bg-yellow-500/80" />
-          <span className="h-3 w-3 rounded-full bg-green-500/80" />
+          <span className="h-2.5 w-2.5 rounded-full bg-destructive/70" />
+          <span className="h-2.5 w-2.5 rounded-full bg-amber-400/70" />
+          <span className="h-2.5 w-2.5 rounded-full bg-secondary/70" />
         </div>
         <div className="flex-1 flex items-center justify-center gap-1.5">
-          <ScrollText className="h-3 w-3 text-indigo-400/60" />
-          <span className="text-[10px] text-indigo-400/60 tracking-widest uppercase">
+          <ScrollText className="h-3 w-3 text-primary/50" />
+          <span className="text-[10px] text-muted-foreground tracking-widest uppercase">
             simulation.log
           </span>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
           {isLive && (
             <>
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-[10px] text-emerald-400 tracking-wider uppercase">live</span>
+              <span className="h-1.5 w-1.5 rounded-full bg-secondary animate-pulse" />
+              <span className="text-[10px] text-secondary tracking-wider uppercase">live</span>
             </>
           )}
-          <span className="text-[10px] text-white/20">{lines.length} lines</span>
+          <span className="text-[10px] text-muted-foreground/50">{lines.length} lines</span>
         </div>
       </div>
 
+      {/* Log lines */}
       <div
         ref={scrollRef}
         className="overflow-y-auto"
@@ -88,22 +75,23 @@ export function LogViewer({
       >
         <div className="p-4 space-y-0.5">
           {lines.map((line, i) => {
-            let lineClass = "text-slate-400";
+            let lineClass = "text-muted-foreground";
             let prefix = "";
+
             if (/\[ERROR\]|error|Error|ERROR/.test(line)) {
-              lineClass = "text-red-400";
+              lineClass = "text-destructive";
               prefix = "✗ ";
             } else if (/\[WARNING\]|warn|WARN|warning/i.test(line)) {
-              lineClass = "text-amber-400";
+              lineClass = "text-amber-400 dark:text-amber-300";
               prefix = "⚠ ";
             } else if (/\[INFO\]|INFO|info/.test(line) || /Starting|Completed|Loading|Loaded|Saving/i.test(line)) {
-              lineClass = "text-indigo-300";
+              lineClass = "text-primary";
               prefix = "› ";
             } else if (/\[RMSD\]|\[RMSF\]|\[Rg\]|\[SASA\]|\[DSSP\]/.test(line)) {
-              lineClass = "text-cyan-400";
+              lineClass = "text-secondary";
               prefix = "⟡ ";
             } else if (/\d+%|step|Step/.test(line)) {
-              lineClass = "text-green-400";
+              lineClass = "text-accent";
               prefix = "✓ ";
             }
 
@@ -112,7 +100,7 @@ export function LogViewer({
 
             return (
               <div key={key} className="flex gap-2 leading-5 group">
-                <span className="select-none text-white/10 w-8 text-right shrink-0 group-hover:text-white/30 transition-colors">
+                <span className="select-none text-muted-foreground/20 w-8 text-right shrink-0 group-hover:text-muted-foreground/40 transition-colors">
                   {i + 1}
                 </span>
                 <span className={`${lineClass} break-all`}>
@@ -120,7 +108,7 @@ export function LogViewer({
                   {line || " "}
                   {isLast && isLive && (
                     <span
-                      className="inline-block w-2 h-[0.85em] bg-emerald-400 ml-0.5 align-middle animate-pulse"
+                      className="inline-block w-2 h-[0.85em] bg-secondary ml-0.5 align-middle animate-pulse"
                       style={{ animationDuration: "1s" }}
                     />
                   )}

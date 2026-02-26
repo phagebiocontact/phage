@@ -102,12 +102,12 @@ const Footer = () => {
 							<motion.div
 								whileHover={{ rotate: 360 }}
 								transition={{ duration: 0.7 }}
-								className="relative w-12 h-12 rounded-xl bg-gradient-primary p-2 shadow-lg"
+								className="relative w-10 h-10"
 							>
 								<img
-									src="phagedesign.png"
+									src="/phagedesign.png"
 									alt="Phage Logo"
-									className="w-full h-full object-contain"
+									className="w-full h-full object-contain scale-150"
 								/>
 							</motion.div>
 							<span className="text-gradient font-display font-bold text-2xl">

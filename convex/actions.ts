@@ -442,11 +442,15 @@ function parseCsv<T>(
   csv: string,
   mapper: (row: Record<string, string>, index: number) => T
 ): T[] {
-  const lines = csv.trim().split("\n").filter((l) => l.trim() && !l.startsWith("#"));
+  const lines = csv.trim().split("\n").filter((l) => l.trim());
   if (lines.length < 2) return [];
-  const headers = lines[0].split(",").map((h) => h.trim().replace(/^["']|["']$/g, ""));
-  return lines.slice(1).map((line, i) => {
-    const values = line.split(",").map((v) => v.trim().replace(/^["']|["']$/g, ""));
+  // OpenMM prefixes its header with '#' — strip it rather than filtering the line out
+  const rawHeader = lines[0].startsWith("#") ? lines[0].slice(1) : lines[0];
+  const headers = rawHeader.split(",").map((h) => h.trim().replace(/^"|"$/g, ""));
+  // Skip subsequent comment lines (non-header #-lines) but keep data rows
+  const dataLines = lines.slice(1).filter((l) => !l.trim().startsWith("#"));
+  return dataLines.map((line, i) => {
+    const values = line.split(",").map((v) => v.trim().replace(/^"|"$/g, ""));
     const row: Record<string, string> = {};
     headers.forEach((h, idx) => {
       row[h] = values[idx] ?? "";

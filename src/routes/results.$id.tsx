@@ -65,7 +65,7 @@ function Results() {
   const hasArtifacts = !!(simulation as { artifacts?: object })?.artifacts;
   const isFinalizing = rawStatus === "completed" && !hasArtifacts;
 
-  const { wsStatus, wsConnected, livePdbBase64, liveTrajectoryFrame, liveAnalysisPoints } = useSimulationWs({
+  const { wsStatus, wsConnected, liveLogs, livePdbBase64, liveTrajectoryFrame, liveAnalysisPoints } = useSimulationWs({
     modalJobId: (simulation as { modalJobId?: string })?.modalJobId,
     enabled: !isTerminalStatus && !!simulation,
   });
@@ -102,12 +102,16 @@ function Results() {
   // modalJobId drives the frame API
   const modalJobId = (simulation as { modalJobId?: string })?.modalJobId ?? null;
 
+  // Derive live RMSF from the most recent analysis point that carries rmsf[]
+  const latestRmsf = [...liveAnalysisPoints].reverse().find(p => p.rmsf && p.rmsf.length > 0)?.rmsf;
+  const liveRmsfData = latestRmsf?.map((value, residue) => ({ residue, value }));
+
   const liveAnalysisData: SimulationAnalysisData = {
     rmsd: liveAnalysisPoints.filter(p => p.rmsd != null).map(p => ({ frame: p.frame, time: p.time_ns, value: p.rmsd ?? 0 })),
     rg: liveAnalysisPoints.filter(p => p.rg != null).map(p => ({ frame: p.frame, time: p.time_ns, value: p.rg ?? 0 })),
     energy: liveAnalysisPoints.filter(p => p.potential != null).map(p => ({ frame: p.frame, time: p.time_ns, potential: p.potential ?? 0, kinetic: p.kinetic ?? 0, total: p.total ?? 0 })),
     ss: liveAnalysisPoints.filter(p => p.helix != null).map(p => ({ frame: p.frame, time: p.time_ns, helix: p.helix ?? 0, sheet: p.sheet ?? 0, coil: p.coil ?? 0 })),
-    rmsf: undefined,
+    rmsf: liveRmsfData,
   };
 
   const wsAnalysis = wsStatus?.analysis_data as Record<string, unknown> | undefined;
@@ -233,7 +237,7 @@ function Results() {
     <div className="bg-background" style={{ paddingTop: HEADER_H }}>
 
       {/* ── Sub-header ── */}
-      <div className="sticky top-[80px] z-30 border-b border-border/40 bg-background/90 backdrop-blur-sm">
+      <div className={`${!isTerminal ? "top-[80px] z-30" : ""} border-b border-border/40 bg-background/90 backdrop-blur-sm`}>
         <div className="container mx-auto px-4 max-w-[1400px] h-12 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <Button variant="ghost" size="sm" onClick={() => navigate({ to: "/jobs" })}
@@ -513,7 +517,7 @@ function Results() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-0">
-                  <LogViewer content={wsStatus?.logLines?.join("\n") || "Connecting to simulation..."} maxHeight="60vh" />
+                  <LogViewer content={liveLogs.length > 0 ? liveLogs.join("\n") : "Connecting to simulation..."} maxHeight="60vh" isLive={wsConnected} />
                 </CardContent>
               </Card>
             </TabsContent>

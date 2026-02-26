@@ -120,7 +120,7 @@ def run_dssp(pdb_file, xtc_file, p_time):
         print(f"[DSSP] Analysis failed: {e}\n{traceback.format_exc()}")
         return ("dssp", None, None)
 
-@app.function(image=image,cpu=32,gpu="T4",volumes={"/data":vl},scaledown_window=300,timeout=86400,retries=10,enable_memory_snapshot=True,experimental_options={"enable_gpu_snapshot":True})
+@app.function(image=image,cpu=8,gpu="T4",volumes={"/data":vl},scaledown_window=300,timeout=86400,retries=10,enable_memory_snapshot=True,experimental_options={"enable_gpu_snapshot":True})
 def md(job_id,protein_bytes,ligand_bytes,config_json):
     from openmm.app import PDBFile,Modeller,PME,HBonds,Simulation,StateDataReporter,XTCReporter
     from openmmforcefields.generators import SystemGenerator
@@ -377,20 +377,24 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
         _local_analysis_buf = []  # batched locally, flushed to jc every COMMIT_INTERVAL chunks
         COMMIT_INTERVAL = 10
 
-        def _live_worker(positions_nm, topology, ref_xyz_bb, bb_idx, snap_file, fc, step_done, time_ns_done,
+        def _live_worker(positions_nm, omm_topology, md_topology, ref_xyz_bb, bb_idx, ca_idx, ref_xyz_ca, snap_file, fc, step_done, time_ns_done,
                          read_energy, job_id, local_buf):
             """CPU/IO work that runs off the GPU main thread."""
             try:
                 import mdtraj as _md
                 import numpy as _np
                 # Build snap traj directly from positions array — no PDB write/read needed for analysis
-                snap_traj = _md.Trajectory(positions_nm[_np.newaxis], topology)
+                snap_traj = _md.Trajectory(positions_nm[_np.newaxis], md_topology)
                 rmsd_val = float(_np.sqrt(_np.mean(_np.sum((positions_nm[bb_idx] - ref_xyz_bb) ** 2, axis=1)))) * 10.0
                 rg_val = float(_md.compute_rg(snap_traj)[0] * 10.0)
                 dssp_arr = _md.compute_dssp(snap_traj)[0]
                 helix_count = int((dssp_arr == 'H').sum())
                 sheet_count = int((dssp_arr == 'E').sum())
                 coil_count = int((dssp_arr == 'C').sum())
+
+                # Live RMSF: per-CA deviation from reference (in Å)
+                ca_disp = positions_nm[ca_idx] - ref_xyz_ca  # (n_ca, 3)
+                rmsf_vals = [round(float(v * 10.0), 4) for v in _np.sqrt(_np.sum(ca_disp ** 2, axis=1))]
 
                 pot_e = kin_e = tot_e = None
                 if read_energy and os.path.exists("energy.csv"):
@@ -411,6 +415,7 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
                     "rmsd": round(rmsd_val, 4),
                     "rg": round(rg_val, 4),
                     "helix": helix_count, "sheet": sheet_count, "coil": coil_count,
+                    "rmsf": rmsf_vals,
                 }
                 if pot_e is not None:
                     apoint.update({"potential": round(pot_e, 2), "kinetic": round(kin_e, 2), "total": round(tot_e, 2)})
@@ -421,7 +426,7 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
                 import openmm.unit as _u
                 pos_q = _u.Quantity(positions_nm, _u.nanometer)
                 with open(snap_file, "w") as _f:
-                    _PDB.writeFile(topology, pos_q, _f)
+                    _PDB.writeFile(omm_topology, pos_q, _f)
 
                 return (fc, step_done, time_ns_done, snap_file, apoint)
             except Exception as _e:
@@ -449,7 +454,10 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
                 reference_traj = md.load("reference.pdb")
                 backbone_indices = reference_traj.topology.select('backbone')
                 ref_xyz_bb = ref_pos_nm[backbone_indices]  # pre-slice for fast RMSD
-                logger.info(f"Saved reference structure, {len(backbone_indices)} backbone atoms selected for RMSD")
+                # CA indices for live RMSF (deviation of each CA from reference)
+                ca_indices = reference_traj.topology.select('protein and name CA')
+                ref_xyz_ca = ref_pos_nm[ca_indices]  # shape (n_ca, 3)
+                logger.info(f"Saved reference structure, {len(backbone_indices)} backbone atoms, {len(ca_indices)} CA atoms for live RMSF")
                 jc[f"{job_id}_analysis"] = []
                 jc[f"{job_id}_frame"] = None
 
@@ -499,7 +507,8 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
 
                     # Fire off next chunk's work to background thread
                     _pending_live_future = _live_executor.submit(
-                        _live_worker, pos_nm, mod.topology, ref_xyz_bb, backbone_indices,
+                        _live_worker, pos_nm, mod.topology, reference_traj.topology, ref_xyz_bb, backbone_indices,
+                        ca_indices, ref_xyz_ca,
                         snap_file, frame_count, done, time_ns_done, read_energy, job_id, _local_analysis_buf
                     )
                     frame_count += 1
