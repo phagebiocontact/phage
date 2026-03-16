@@ -9,6 +9,8 @@ interface TimelineControlsProps {
   onFrameChange: (frame: number) => void;
   onPlay: () => void;
   onPause: () => void;
+  playbackSpeed: number;
+  onSpeedChange: (speed: number) => void;
 }
 
 export function TimelineControls({
@@ -18,8 +20,15 @@ export function TimelineControls({
   onFrameChange,
   onPlay,
   onPause,
+  playbackSpeed,
+  onSpeedChange,
 }: TimelineControlsProps) {
   const hasFrames = totalFrames >= 2;
+
+  const cycleSpeed = () => {
+    const next = playbackSpeed >= 2 ? 0.25 : playbackSpeed + 0.25;
+    onSpeedChange(next);
+  };
 
   return (
     <div className="flex items-center gap-3 px-4 py-3 border-t border-border/40 bg-card/60 backdrop-blur-sm">
@@ -75,9 +84,20 @@ export function TimelineControls({
         )}
       </div>
 
-      <span className="text-xs text-muted-foreground font-mono tabular-nums whitespace-nowrap shrink-0">
+      <span className="text-xs text-muted-foreground font-mono tabular-nums whitespace-nowrap shrink-0 border-l border-border/40 pl-3 ml-1">
         {hasFrames ? `${currentFrame + 1} / ${totalFrames}` : "Loading…"}
       </span>
+
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-7 w-[46px] shrink-0 text-[11px] text-muted-foreground hover:text-foreground font-mono px-0"
+        onClick={cycleSpeed}
+        disabled={!hasFrames}
+        title="Playback Speed"
+      >
+        {playbackSpeed}x
+      </Button>
     </div>
   );
 }

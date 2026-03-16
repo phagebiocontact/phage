@@ -1,5 +1,5 @@
 "use client";
-import { Github, Linkedin, Mail, Twitter } from "lucide-react";
+import { Mail, Twitter } from "lucide-react";
 import { motion } from "motion/react";
 import { NavLink } from "@/components/NavLink";
 
@@ -23,17 +23,7 @@ const footerLinks = {
 			label: "Twitter",
 		},
 		{
-			href: "https://github.com",
-			icon: <Github className="h-5 w-5" />,
-			label: "GitHub",
-		},
-		{
-			href: "https://linkedin.com",
-			icon: <Linkedin className="h-5 w-5" />,
-			label: "LinkedIn",
-		},
-		{
-			href: "mailto:support@phage.bio",
+			href: "mailto:phagebiocontact@gmail.com",
 			icon: <Mail className="h-5 w-5" />,
 			label: "Email",
 		},
@@ -115,8 +105,8 @@ const Footer = () => {
 							</span>
 						</NavLink>
 						<p className="text-muted-foreground text-lg leading-relaxed max-w-sm">
-							Accelerating molecular discovery through advanced cloud-based
-							simulations and AI-powered analysis.
+							Accelerating research through advanced cloud-based
+							simulations and analysis.
 						</p>
 						{/* Social Links */}
 						<div className="flex gap-3 pt-2">

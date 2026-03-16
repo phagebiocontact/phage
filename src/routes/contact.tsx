@@ -222,7 +222,7 @@ function Contact() {
 				<div className="container relative mx-auto px-4">
 					<div className="text-center mb-16 max-w-2xl mx-auto">
 						<h1 className="text-4xl md:text-5xl font-bold mb-6">
-							Get in <span className="text-gradient">Touch</span>
+							Get in <span className="glass-pill">Touch</span>
 						</h1>
 						<p className="text-muted-foreground text-lg">
 							Have questions about our platform or need technical support? We're
