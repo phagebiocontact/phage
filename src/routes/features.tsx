@@ -54,9 +54,9 @@ const comparisonRows = [
 	},
 	{
 		metric: "Software Installation",
-		traditional: "Manual GROMACS/AMBER install, CUDA drivers, dependency hell",
+		traditional: "Manual GROMACS/AMBER install, CUDA drivers, dependency chaos",
 		phage: "Pre-configured OpenMM + GAFF2/OpenFF stack",
-		highlightTraditional: ["dependency hell"],
+		highlightTraditional: ["dependency chaos"],
 		highlightPhage: ["Pre-configured"],
 	},
 	{
@@ -109,7 +109,7 @@ const accuracyMetrics = [
 	{ label: "Simulation Engine", value: "OpenMM", description: "CUDA-accelerated engine with GPU-optimized kernels for maximum throughput" },
 	{ label: "Equilibration", value: "NVT + NPT", description: "Full equilibration pipeline — energy minimization, NVT temperature, NPT pressure coupling" },
 	{ label: "Analysis Output", value: "RMSD · RMSF · Rg", description: "Automated structural analysis with SASA, DSSP secondary structure, and hydrogen bonding" },
-	{ label: "Export Formats", value: "PDB · XTC · SVG", description: "Download raw trajectories, coordinates, and publication-quality vector plots" },
+	{ label: "Export Formats", value: "PDB · XTC · PNG", description: "Download raw trajectories, coordinates, and publication-quality vector plots" },
 	{ label: "Timestep", value: "HMR-enabled", description: "Hydrogen Mass Repartitioning for larger timesteps, increasing simulation throughput" },
 ];
 
@@ -118,7 +118,7 @@ const securityFeatures = [
 	{
 		icon: Lock,
 		title: "End-to-End Encryption",
-		description: "AES-256 encryption for all data at rest. TLS 1.3 for data in transit. PDB files and results never leave encrypted channels.",
+		description: "PDB files and results never leave encrypted channels.",
 	},
 	{
 		icon: ShieldCheck,
@@ -133,7 +133,7 @@ const securityFeatures = [
 	{
 		icon: Cloud,
 		title: "SOC 2 Infrastructure",
-		description: "Built on Convex (SOC 2 Type II) and Modal Labs. Enterprise-grade access controls and audit logging.",
+		description: "Built on SOC 2 Type II certified infrasturure backend.",
 	},
 ];
 
@@ -143,7 +143,7 @@ const features = [
 		icon: <Cloud className="h-8 w-8" />,
 		title: "Cloud Native",
 		description: "Run simulations on scalable cloud infrastructure. No local hardware needed.",
-		accentClass: "bg-gradient-primary",
+		accentClass: "bg-gradient-secondary",
 	},
 	{
 		icon: <Cpu className="h-8 w-8" />,
@@ -155,19 +155,19 @@ const features = [
 		icon: <Database className="h-8 w-8" />,
 		title: "Automated Parametrization",
 		description: "Auto-generate force field parameters for small molecules using GAFF2/OpenFF.",
-		accentClass: "bg-primary",
+		accentClass: "bg-gradient-secondary",
 	},
 	{
 		icon: <Activity className="h-8 w-8" />,
 		title: "Real-time Monitoring",
 		description: "Watch simulation progress with live energetic plots and trajectory streaming.",
-		accentClass: "bg-secondary",
+		accentClass: "bg-gradient-secondary",
 	},
 	{
 		icon: <BarChart3 className="h-8 w-8" />,
 		title: "Advanced Analysis",
-		description: "Built-in RMSD, RMSF, Rg, SASA, DSSP with downloadable SVG plots.",
-		accentClass: "bg-accent",
+		description: "Built-in RMSD, RMSF, Rg, SASA, DSSP with downloadable PNG plots.",
+		accentClass: "bg-gradient-secondary",
 	},
 	{
 		icon: <Lock className="h-8 w-8" />,
@@ -179,19 +179,19 @@ const features = [
 		icon: <Globe className="h-8 w-8" />,
 		title: "Access Anywhere",
 		description: "Run and monitor simulations from any browser. No CLI or SSH required.",
-		accentClass: "bg-gradient-primary",
+		accentClass: "bg-gradient-secondary",
 	},
 	{
 		icon: <Share2 className="h-8 w-8" />,
 		title: "Collaboration",
 		description: "Share results with collaborators. Download trajectories and analysis for any downstream tool.",
-		accentClass: "bg-secondary",
+		accentClass: "bg-gradient-secondary",
 	},
 	{
 		icon: <Zap className="h-8 w-8" />,
 		title: "Pay-Per-Use",
 		description: "No subscriptions. Credits consumed per nanosecond of simulation time. 5 free credits on signup.",
-		accentClass: "bg-accent",
+		accentClass: "bg-gradient-secondary",
 	},
 ];
 
@@ -207,6 +207,10 @@ function highlightText(text: string, highlights: string[]) {
 function Features() {
 	return (
 		<div className="fusion-canvas min-h-screen bg-background overflow-x-hidden">
+			<style>{`
+				@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600;1,700&display=swap');
+				.font-editorial { font-family: 'Playfair Display', serif; }
+			`}</style>
 			{/* Hero */}
 			<section className="relative pt-28 pb-16 sm:pt-32 sm:pb-20 overflow-hidden">
 				<div className="absolute inset-0 mesh-gradient opacity-30 pointer-events-none" />
@@ -237,32 +241,7 @@ function Features() {
 							className="mb-6 font-bold text-3xl sm:text-4xl md:text-5xl lg:text-6xl leading-tight"
 						>
 							Everything for{" "}
-							<span className="relative inline-block">
-								<span className="text-gradient-secondary">Modern MD Research</span>
-								<motion.svg
-									initial={{ pathLength: 0, opacity: 0 }}
-									animate={{ pathLength: 1, opacity: 1 }}
-									transition={{ duration: 1, delay: 0.8 }}
-									className="absolute -bottom-2 left-0 w-full"
-									viewBox="0 0 300 12"
-									fill="none"
-									aria-hidden="true"
-								>
-									<title>Decorative underline</title>
-									<path
-										d="M2 10C50 4 100 2 150 6C200 10 250 4 298 2"
-										stroke="url(#feat-ul)"
-										strokeWidth="4"
-										strokeLinecap="round"
-									/>
-									<defs>
-										<linearGradient id="feat-ul" x1="0%" y1="0%" x2="100%" y2="0%">
-											<stop offset="0%" stopColor="hsl(var(--secondary))" />
-											<stop offset="100%" stopColor="hsl(var(--primary))" />
-										</linearGradient>
-									</defs>
-								</motion.svg>
-							</span>
+							<span className="font-editorial italic font-bold tracking-wide text-gradient">Modern MD Research</span>
 						</motion.h1>
 						<motion.p
 							initial={{ opacity: 0, y: 20 }}
@@ -289,7 +268,7 @@ function Features() {
 						<div className="relative aspect-video rounded-2xl overflow-hidden border border-border/50 shadow-2xl bg-black">
 							<iframe
 								className="absolute inset-0 w-full h-full"
-								src="https://www.youtube.com/embed/d95J8yzvjbQ"
+								src="https://www.youtube.com/embed/9jrjHTjBhnM?rel=0"
 								title="Phage Platform Demo"
 								allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
 								allowFullScreen
@@ -314,7 +293,7 @@ function Features() {
 						</span>
 						<h2 className="font-display font-bold text-2xl sm:text-3xl md:text-4xl lg:text-5xl mb-3">
 							Traditional Setup vs{" "}
-							<span className="text-gradient">Phage</span>
+							<span className="font-editorial italic font-bold tracking-wide text-gradient">Phage</span>
 						</h2>
 						<p className="mx-auto max-w-xl text-muted-foreground text-sm sm:text-base">
 							Stop spending weeks on infrastructure. Every hour debugging CUDA drivers is an hour not spent on research.
@@ -404,7 +383,7 @@ function Features() {
 						className="mb-10 text-center"
 					>
 						<h2 className="font-display font-bold text-2xl sm:text-3xl md:text-4xl mb-3">
-							Platform <span className="text-gradient">Capabilities</span>
+							Platform <span className="font-editorial italic font-bold tracking-wide text-gradient">Capabilities</span>
 						</h2>
 					</motion.div>
 					<motion.div
@@ -450,7 +429,7 @@ function Features() {
 							Accuracy & Validation
 						</span>
 						<h2 className="font-display font-bold text-2xl sm:text-3xl md:text-4xl mb-3">
-							Publication-Quality <span className="text-gradient">Accuracy</span>
+							Publication-Quality <span className="font-editorial italic font-bold tracking-wide text-gradient">Accuracy</span>
 						</h2>
 						<p className="mx-auto max-w-xl text-muted-foreground text-sm sm:text-base">
 							Every simulation uses validated force fields with automated energy minimization, NVT and NPT equilibration before production.
@@ -491,7 +470,7 @@ function Features() {
 						</span>
 						<h2 className="font-display font-bold text-2xl sm:text-3xl md:text-4xl mb-3">
 							Your Research Data is{" "}
-							<span className="text-gradient-secondary">Protected</span>
+							<span className="font-editorial italic font-bold tracking-wide text-gradient">Protected</span>
 						</h2>
 					</motion.div>
 
@@ -554,7 +533,7 @@ function Features() {
 								How It Works
 							</span>
 							<h2 className="font-bold text-2xl sm:text-3xl md:text-4xl mb-3">
-								Simple <span className="text-gradient">3-Step Workflow</span>
+								Simple <span className="font-editorial italic font-bold tracking-wide text-gradient">3-Step Workflow</span>
 							</h2>
 						</motion.div>
 
@@ -570,7 +549,7 @@ function Features() {
 									step: "01",
 									title: "Upload Your Structure",
 									description: "PDB for proteins, SDF for ligands. Auto-validated geometry and topology.",
-									accentClass: "bg-gradient-primary",
+									accentClass: "bg-gradient-secondary",
 								},
 								{
 									step: "02",
@@ -581,8 +560,8 @@ function Features() {
 								{
 									step: "03",
 									title: "Analyze & Download",
-									description: "Auto-generated analysis plots. 3D trajectory viewer. SVG export for publications.",
-									accentClass: "bg-primary",
+									description: "Auto-generated analysis plots. 3D trajectory viewer. PNG plots export for publications.",
+									accentClass: "bg-gradient-secondary",
 								},
 							].map((item) => (
 								<motion.div
@@ -627,7 +606,7 @@ function Features() {
 						className="max-w-2xl mx-auto space-y-6"
 					>
 						<h2 className="font-bold text-3xl sm:text-4xl lg:text-5xl">
-							Ready to Get <span className="text-gradient">Started</span>?
+							Ready to Get <span className="font-editorial italic font-bold tracking-wide text-gradient">Started</span>?
 						</h2>
 						<p className="text-muted-foreground text-base sm:text-lg">
 							Join researchers who trust Phage for their simulations.

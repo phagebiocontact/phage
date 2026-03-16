@@ -13,3 +13,7 @@ count.txt
 todos.json
 *.xml
 knip.json
+convexrules
+public/*.mp4
+# Local Netlify folder
+.netlify

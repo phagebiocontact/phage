@@ -1,10 +1,123 @@
 import modal
 from modal import Volume as vol,Dict,Image as img,App
 import time
+import json
+import math
+import struct
+import zlib
 vl=vol.from_name("md-storage",create_if_missing=True)
 jc=Dict.from_name("md-job-control",create_if_missing=True)
 image = img.debian_slim(python_version="3.12").micromamba().micromamba_install("openmm","cuda-version=12.8", "openmmforcefields", "openff-toolkit", "openff-forcefields", "mdtraj", "mdanalysis", "ambertools", "rdkit", "pdbfixer", "matplotlib", "seaborn", "numpy", "scipy", "polars", "fastapi", "parmed", "loguru", channels=["conda-forge"])
 app=modal.App(name="md")
+
+PACKET_MAGIC = 0x50484731
+PACKET_HEADER_BYTES = 16
+PACKET_STATUS = 1
+PACKET_LOGS = 2
+PACKET_INIT = 3
+PACKET_FRAME = 4
+PACKET_END = 5
+PACKET_ERROR = 6
+MAX_STREAM_FRAMES = 100
+RING_BUFFER_BYTES = 64 * 1024 * 1024
+
+
+def build_packet(kind, header=None, payload=b"", compress_payload=False):
+    header = header or {}
+    body = zlib.compress(payload) if compress_payload and payload else payload
+    if compress_payload and payload:
+        header = {**header, "compressed": True}
+    header_bytes = json.dumps(header, separators=(",", ":")).encode("utf-8")
+    prefix = struct.pack("<IHHII", PACKET_MAGIC, 1, kind, len(header_bytes), len(body))
+    return prefix + header_bytes + body
+
+
+def status_packet(state):
+    return build_packet(PACKET_STATUS, state, b"")
+
+
+def logs_packet(text_chunk, start_line=0):
+    return build_packet(PACKET_LOGS, {"startLine": start_line}, text_chunk.encode("utf-8"))
+
+
+def error_packet(message):
+    return build_packet(PACKET_ERROR, {}, str(message).encode("utf-8"))
+
+
+def dssp_codes(dssp_frame):
+    mapping = {"C": 0.0, "H": 1.0, "E": 2.0}
+    return [mapping.get(str(code), 0.0) for code in dssp_frame]
+
+
+def coords_from_pdb_bytes(pdb_bytes):
+    import numpy as np
+    coords = []
+    for line in pdb_bytes.decode("utf-8", errors="ignore").splitlines():
+        if line.startswith(("ATOM", "HETATM")):
+            coords.extend([
+                float(line[30:38]),
+                float(line[38:46]),
+                float(line[46:54]),
+            ])
+    return np.asarray(coords, dtype=np.float32)
+
+
+def frame_packet(slot_index, source_frame, time_ns, progress, coords_angstrom, rmsf_vals, dssp_vals, scalars):
+    import numpy as np
+    coords = np.asarray(coords_angstrom, dtype=np.float32).reshape(-1)
+    rmsf = np.asarray(rmsf_vals or [], dtype=np.float32)
+    dssp = np.asarray(dssp_vals or [], dtype=np.float32)
+    payload = np.concatenate([coords, rmsf, dssp]).astype(np.float32, copy=False)
+    sections = {
+        "coords": [0, int(coords.size)],
+        "rmsf": [int(coords.size), int(coords.size + rmsf.size)],
+        "dssp": [int(coords.size + rmsf.size), int(coords.size + rmsf.size + dssp.size)],
+    }
+    header = {
+        "slotIndex": int(slot_index),
+        "sourceFrame": int(source_frame),
+        "timeNs": float(time_ns),
+        "progress": float(progress),
+        "scalars": {k: float(v) for k, v in scalars.items()},
+        "sections": sections,
+    }
+    return build_packet(PACKET_FRAME, header, payload.tobytes(), compress_payload=True)
+
+
+def init_packet(pdb_bytes, atom_count, slot_count, residue_count):
+    return build_packet(PACKET_INIT, {
+        "atomCount": int(atom_count),
+        "slotCount": int(slot_count),
+        "residueCount": int(residue_count),
+        "ringBufferSuggested": (atom_count * max(slot_count, 1) * 12) > RING_BUFFER_BYTES,
+        "topologyFormat": "pdb",
+    }, pdb_bytes, compress_payload=True)
+
+
+def unwrap_relative_to_previous(current_positions_nm, previous_positions_nm, box_vectors_nm):
+    import numpy as np
+    if previous_positions_nm is None or box_vectors_nm is None:
+        return current_positions_nm
+    try:
+        box = np.asarray(box_vectors_nm, dtype=np.float32)
+        if box.shape != (3, 3):
+            return current_positions_nm
+        inv_box = np.linalg.inv(box)
+        delta_frac = (current_positions_nm - previous_positions_nm) @ inv_box
+        delta_frac -= np.round(delta_frac)
+        return previous_positions_nm + (delta_frac @ box)
+    except Exception:
+        return current_positions_nm
+
+
+def sample_frame_indices(total_frames, max_frames=MAX_STREAM_FRAMES):
+    if total_frames <= max_frames:
+        return list(range(total_frames))
+    stride = max(1, math.ceil(total_frames / max_frames))
+    indices = list(range(0, total_frames, stride))
+    if indices[-1] != total_frames - 1:
+        indices[-1] = total_frames - 1
+    return indices[:max_frames]
 
 def run_rmsd(pdb_file, xtc_file, p_time):
     try:
@@ -69,26 +182,26 @@ def run_rg(pdb_file, xtc_file, p_time):
         print(f"[Rg] Analysis failed: {e}\n{traceback.format_exc()}")
         return ("radiusOfGyration", None, None)
 
-def run_sasa(pdb_file, xtc_file, p_time):
+def run_ligand_rmsd(pdb_file, xtc_file, p_time):
     try:
         import mdtraj as md
         import numpy as np
         import polars as pl
         from loguru import logger
         traj = md.load(xtc_file, top=pdb_file)
-        # Remove virtual sites (e.g. 'VS' in OPC water) that lack radii
-        real_atom_indices = [a.index for a in traj.topology.atoms if a.element is not None and a.element.symbol != 'VS']
-        traj = traj.atom_slice(real_atom_indices)
-        logger.info("[SASA] Starting calculation")
-        totalsasa = md.shrake_rupley(traj).sum(axis=1)
-        df = pl.DataFrame({"Time": np.arange(len(totalsasa)) * (p_time / len(totalsasa)), "Total SASA": totalsasa})
-        t_list = [{"frame": i, "time": float(i * p_time / len(totalsasa)), "value": float(v)} for i, v in enumerate(totalsasa)]
-        logger.info(f"[SASA] Completed successfully, {len(totalsasa)} data points")
-        return ("sasa", t_list, df)
+        ligand_indices = traj.topology.select("resname UNL or not protein and not water and not (name NA or name CL or name K or name CA or name MG)")
+        if len(ligand_indices) == 0:
+            return ("ligandRmsd", [], pl.DataFrame({"Time": [], "Ligand RMSD": []}))
+        logger.info("[Ligand RMSD] Starting calculation")
+        rmsd = md.rmsd(traj.atom_slice(ligand_indices), traj.atom_slice(ligand_indices), 0) * 10.0
+        df = pl.DataFrame({"Time": np.arange(len(rmsd)) * (p_time / len(rmsd)), "Ligand RMSD": rmsd})
+        t_list = [{"frame": i, "time": float(i * p_time / len(rmsd)), "value": float(v)} for i, v in enumerate(rmsd)]
+        logger.info(f"[Ligand RMSD] Completed successfully, {len(rmsd)} data points")
+        return ("ligandRmsd", t_list, df)
     except Exception as e:
         import traceback
-        print(f"[SASA] Analysis failed: {e}\n{traceback.format_exc()}")
-        return ("sasa", None, None)
+        print(f"[Ligand RMSD] Analysis failed: {e}\n{traceback.format_exc()}")
+        return ("ligandRmsd", None, None)
 
 def run_dssp(pdb_file, xtc_file, p_time):
     try:
@@ -305,10 +418,13 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
             periodic_forcefield_kwargs={"nonbondedMethod": PME, "nonbondedCutoff": config.get("nonbonded_cutoff_nm", 1.0) * omm_unit.nanometer}
         )
         
+        ligand_indices = np.asarray([], dtype=int)
         if ligand_mol:
             update_status("Preparing System", 15, "Adding ligand to system")
+            ligand_start = mod.topology.getNumAtoms()
             lig_off_top = ligand_mol.to_topology().to_openmm()
             mod.add(lig_off_top, ligand_mol.conformers[0].to_openmm())
+            ligand_indices = np.arange(ligand_start, ligand_start + lig_off_top.getNumAtoms(), dtype=int)
             logger.info("Ligand added to system")
 
         update_status("Preparing System", 18, f"Adding solvent ({solvent_model})")
@@ -344,6 +460,8 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
         system.addForce(barostat)
         
         integrator = lmi(temp, 1.0/omm_unit.picosecond, dt)
+        dt_fs = dt.value_in_unit(omm_unit.femtoseconds)
+        snapshot_interval_steps = max(1, int(round(10000.0 / dt_fs)))
         
         try:
             platform = Platform.getPlatformByName('CUDA')
@@ -367,34 +485,52 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
         ]
 
         frame_count = 0
+        equil_reporter = None
         reference_traj = None
         backbone_indices = None
-        ref_xyz = None  # raw numpy positions for fast RMSD without PDB round-trip
+        ca_indices = np.asarray([], dtype=int)
+        ref_xyz_bb = None
+        ref_xyz_ligand = None
+        ref_xyz_ca = None
+        prev_display_positions_nm = None
 
         # Background thread pool for per-chunk IO/analysis so GPU never waits
         _live_executor = ThreadPoolExecutor(max_workers=2)
         _pending_live_future = None
-        _local_analysis_buf = []  # batched locally, flushed to jc every COMMIT_INTERVAL chunks
-        COMMIT_INTERVAL = 10
+        _live_analysis_buf = []
+        _frame_packets = []
+        live_stream_slots = max(1, math.ceil((config.get("production_time_ns", 10.0) * 100.0) / MAX_STREAM_FRAMES))
+        live_slot_target = max(1, math.ceil((config.get("production_time_ns", 10.0) * 100.0) / live_stream_slots))
+        jc[f"{job_id}_stream_frames"] = []
+        jc[f"{job_id}_stream_slot_count"] = live_slot_target
 
-        def _live_worker(positions_nm, omm_topology, md_topology, ref_xyz_bb, bb_idx, ca_idx, ref_xyz_ca, snap_file, fc, step_done, time_ns_done,
-                         read_energy, job_id, local_buf):
+        def _live_worker(positions_nm, previous_display_positions_nm, box_vectors_nm, omm_topology, md_topology, ref_xyz_bb, bb_idx, ligand_idx, ref_xyz_lig, rmsf_vals, snap_file, packet_file, slot_index, source_frame,
+                         time_ns_done, progress, read_energy):
             """CPU/IO work that runs off the GPU main thread."""
             try:
                 import mdtraj as _md
                 import numpy as _np
                 # Build snap traj directly from positions array — no PDB write/read needed for analysis
                 snap_traj = _md.Trajectory(positions_nm[_np.newaxis], md_topology)
-                rmsd_val = float(_np.sqrt(_np.mean(_np.sum((positions_nm[bb_idx] - ref_xyz_bb) ** 2, axis=1)))) * 10.0
+                try:
+                    snap_traj.image_molecules(inplace=True)
+                except Exception:
+                    pass
+                imaged_positions_nm = snap_traj.xyz[0].astype(_np.float32, copy=False)
+                display_positions_nm = unwrap_relative_to_previous(
+                    imaged_positions_nm,
+                    previous_display_positions_nm,
+                    box_vectors_nm,
+                ).astype(_np.float32, copy=False)
+                rmsd_val = float(_np.sqrt(_np.mean(_np.sum((imaged_positions_nm[bb_idx] - ref_xyz_bb) ** 2, axis=1)))) * 10.0
                 rg_val = float(_md.compute_rg(snap_traj)[0] * 10.0)
                 dssp_arr = _md.compute_dssp(snap_traj)[0]
                 helix_count = int((dssp_arr == 'H').sum())
                 sheet_count = int((dssp_arr == 'E').sum())
                 coil_count = int((dssp_arr == 'C').sum())
-
-                # Live RMSF: per-CA deviation from reference (in Å)
-                ca_disp = positions_nm[ca_idx] - ref_xyz_ca  # (n_ca, 3)
-                rmsf_vals = [round(float(v * 10.0), 4) for v in _np.sqrt(_np.sum(ca_disp ** 2, axis=1))]
+                ligand_rmsd = 0.0
+                if len(ligand_idx) and ref_xyz_lig is not None:
+                    ligand_rmsd = float(_np.sqrt(_np.mean(_np.sum((imaged_positions_nm[ligand_idx] - ref_xyz_lig) ** 2, axis=1)))) * 10.0
 
                 pot_e = kin_e = tot_e = None
                 if read_energy and os.path.exists("energy.csv"):
@@ -410,27 +546,61 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
                         pass
 
                 apoint = {
-                    "frame": fc, "step": step_done,
+                    "frame": slot_index,
+                    "source_frame": source_frame,
                     "time_ns": round(time_ns_done, 4),
-                    "rmsd": round(rmsd_val, 4),
-                    "rg": round(rg_val, 4),
+                    "backbone_rmsd": round(rmsd_val, 4),
+                    "ligand_rmsd": round(ligand_rmsd, 4),
+                    "radius_of_gyration": round(rg_val, 4),
                     "helix": helix_count, "sheet": sheet_count, "coil": coil_count,
-                    "rmsf": rmsf_vals,
+                    "rmsf": [round(float(v), 4) for v in rmsf_vals],
+                    "dssp": dssp_codes(dssp_arr),
                 }
                 if pot_e is not None:
-                    apoint.update({"potential": round(pot_e, 2), "kinetic": round(kin_e, 2), "total": round(tot_e, 2)})
-                local_buf.append(apoint)
+                    apoint.update({
+                        "potential_energy": round(pot_e, 2),
+                        "kinetic_energy": round(kin_e, 2),
+                        "total_energy": round(tot_e, 2),
+                    })
 
-                # Write the PDB snap for the WebSocket viewer (still needed for trajectory streaming)
                 from openmm.app import PDBFile as _PDB
                 import openmm.unit as _u
-                pos_q = _u.Quantity(positions_nm, _u.nanometer)
+                pos_q = _u.Quantity(display_positions_nm, _u.nanometer)
                 with open(snap_file, "w") as _f:
                     _PDB.writeFile(omm_topology, pos_q, _f)
-
-                return (fc, step_done, time_ns_done, snap_file, apoint)
+                packet = frame_packet(
+                    slot_index=slot_index,
+                    source_frame=source_frame,
+                    time_ns=time_ns_done,
+                    progress=progress,
+                    coords_angstrom=(display_positions_nm * 10.0).astype(_np.float32),
+                    rmsf_vals=apoint["rmsf"],
+                    dssp_vals=apoint["dssp"],
+                    scalars={
+                        "frame": apoint["frame"],
+                        "backbone_rmsd": apoint["backbone_rmsd"],
+                        "ligand_rmsd": apoint["ligand_rmsd"],
+                        "radius_of_gyration": apoint["radius_of_gyration"],
+                        "helix": apoint["helix"],
+                        "sheet": apoint["sheet"],
+                        "coil": apoint["coil"],
+                        "potential_energy": apoint.get("potential_energy", 0.0),
+                        "kinetic_energy": apoint.get("kinetic_energy", 0.0),
+                        "total_energy": apoint.get("total_energy", 0.0),
+                    },
+                )
+                with open(packet_file, "wb") as _packet_f:
+                    _packet_f.write(packet)
+                return {
+                    "slot_index": slot_index,
+                    "source_frame": source_frame,
+                    "time_ns": round(time_ns_done, 4),
+                    "packet_file": packet_file,
+                    "analysis": apoint,
+                    "display_positions_nm": display_positions_nm,
+                }
             except Exception as _e:
-                logger.warning(f"[LIVE] Worker failed at step {step_done}: {_e}")
+                logger.warning(f"[LIVE] Worker failed at frame {source_frame}: {_e}")
                 return None
 
         for phase_name, time_ns in phases:
@@ -447,6 +617,8 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
                 barostat.setFrequency(config.get("barostat_frequency", 25))
                 simulation.context.reinitialize(preserveState=True)
             elif phase_name == "production":
+                if equil_reporter is not None and equil_reporter in simulation.reporters:
+                    simulation.reporters.remove(equil_reporter)
                 ref_state = simulation.context.getState(getPositions=True)
                 ref_pos_nm = np.asarray(ref_state.getPositions(asNumpy=True).value_in_unit(omm_unit.nanometer), dtype=np.float32)
                 with open("reference.pdb", "w") as f:
@@ -454,20 +626,23 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
                 reference_traj = md.load("reference.pdb")
                 backbone_indices = reference_traj.topology.select('backbone')
                 ref_xyz_bb = ref_pos_nm[backbone_indices]  # pre-slice for fast RMSD
-                # CA indices for live RMSF (deviation of each CA from reference)
                 ca_indices = reference_traj.topology.select('protein and name CA')
-                ref_xyz_ca = ref_pos_nm[ca_indices]  # shape (n_ca, 3)
+                ref_xyz_ca = ref_pos_nm[ca_indices]
+                ref_xyz_ligand = ref_pos_nm[ligand_indices] if len(ligand_indices) else None
+                with open("live_topology.pdb", "w") as f:
+                    PDBFile.writeFile(mod.topology, ref_state.getPositions(), f)
                 logger.info(f"Saved reference structure, {len(backbone_indices)} backbone atoms, {len(ca_indices)} CA atoms for live RMSF")
-                jc[f"{job_id}_analysis"] = []
-                jc[f"{job_id}_frame"] = None
+            elif equil_reporter is None:
+                equil_reporter = XTCReporter("equil.xtc", snapshot_interval_steps)
+                simulation.reporters.append(equil_reporter)
 
             steps = int(time_ns * 1e6 / dt.value_in_unit(omm_unit.femtoseconds))
             if phase_name == "production":
-                simulation.reporters.append(XTCReporter("prod.xtc", max(1, steps // 100)))
+                simulation.reporters.append(XTCReporter("prod.xtc", snapshot_interval_steps))
 
             done = 0
-            chunk = 1000
-            update_interval = 10
+            chunk = snapshot_interval_steps
+            update_interval = 5
             chunk_count = 0
             phase_start = time.time()
             while done < steps:
@@ -485,45 +660,63 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
 
                 if phase_name == "production" and reference_traj is not None:
                     # Grab positions NOW (fast GPU→CPU copy) then immediately let GPU continue
-                    state = simulation.context.getState(getPositions=True)
-                    pos_nm = np.asarray(state.getPositions(asNumpy=True).value_in_unit(omm_unit.nanometer), dtype=np.float32)
-                    snap_file = f"frame_{done}.pdb"
-                    time_ns_done = done * dt.value_in_unit(omm_unit.femtoseconds) / 1e6
-                    read_energy = (chunk_count % update_interval == 0)
-
-                    # Drain the previous future result and flush to jc/vl if it's time
+                    source_frame = chunk_count - 1
                     if _pending_live_future is not None:
-                        result = _pending_live_future.result()  # non-blocking if already done
+                        result = _pending_live_future.result()
                         if result is not None:
-                            _fc, _step, _tns, _snap, _apoint = result
-                            if chunk_count % COMMIT_INTERVAL == 0 and _local_analysis_buf:
-                                existing = jc.get(f"{job_id}_analysis", []) or []
-                                existing.extend(_local_analysis_buf)
-                                jc[f"{job_id}_analysis"] = existing
-                                jc[f"{job_id}_frame"] = {"frame_n": _fc, "step": _step, "time_ns": round(_tns, 4), "file": _snap}
-                                vl.commit()
-                                logger.info(f"[LIVE] Flushed {len(_local_analysis_buf)} frames to jc, last RMSD={_apoint['rmsd']:.2f}Å")
-                                _local_analysis_buf.clear()
-
-                    # Fire off next chunk's work to background thread
-                    _pending_live_future = _live_executor.submit(
-                        _live_worker, pos_nm, mod.topology, reference_traj.topology, ref_xyz_bb, backbone_indices,
-                        ca_indices, ref_xyz_ca,
-                        snap_file, frame_count, done, time_ns_done, read_energy, job_id, _local_analysis_buf
-                    )
-                    frame_count += 1
+                            _frame_packets.append(result)
+                            _live_analysis_buf.append(result["analysis"])
+                            prev_display_positions_nm = result["display_positions_nm"]
+                            jc[f"{job_id}_stream_frames"] = _frame_packets
+                            jc[f"{job_id}_analysis"] = _live_analysis_buf
+                            vl.commit()
+                    if source_frame % live_stream_slots == 0:
+                        state = simulation.context.getState(getPositions=True)
+                        pos_nm = np.asarray(state.getPositions(asNumpy=True).value_in_unit(omm_unit.nanometer), dtype=np.float32)
+                        box_vectors_nm = np.asarray(
+                            state.getPeriodicBoxVectors(asNumpy=True).value_in_unit(omm_unit.nanometer),
+                            dtype=np.float32,
+                        )
+                        ca_disp = pos_nm[ca_indices] - ref_xyz_ca
+                        rmsf_vals = np.sqrt(np.sum(ca_disp ** 2, axis=1)) * 10.0
+                        snap_file = f"frame_{source_frame:04d}.pdb"
+                        packet_file = f"stream_slot_{frame_count:03d}.bin"
+                        time_ns_done = done * dt.value_in_unit(omm_unit.femtoseconds) / 1e6
+                        progress = 30 + (60 * (done / steps))
+                        read_energy = (chunk_count % update_interval == 0)
+                        _pending_live_future = _live_executor.submit(
+                            _live_worker,
+                            pos_nm,
+                            None if prev_display_positions_nm is None else prev_display_positions_nm.copy(),
+                            box_vectors_nm,
+                            mod.topology,
+                            reference_traj.topology,
+                            ref_xyz_bb,
+                            backbone_indices,
+                            ligand_indices,
+                            ref_xyz_ligand,
+                            rmsf_vals,
+                            snap_file,
+                            packet_file,
+                            frame_count,
+                            source_frame,
+                            time_ns_done,
+                            progress,
+                            read_energy,
+                        )
+                        frame_count += 1
 
         # Drain any remaining live future
         if _pending_live_future is not None:
             try:
                 result = _pending_live_future.result(timeout=30)
-                if result and _local_analysis_buf:
-                    existing = jc.get(f"{job_id}_analysis", []) or []
-                    existing.extend(_local_analysis_buf)
-                    jc[f"{job_id}_analysis"] = existing
-                    jc[f"{job_id}_frame"] = {"frame_n": result[0], "step": result[1], "time_ns": round(result[2], 4), "file": result[3]}
+                if result:
+                    _frame_packets.append(result)
+                    _live_analysis_buf.append(result["analysis"])
+                    prev_display_positions_nm = result["display_positions_nm"]
+                    jc[f"{job_id}_stream_frames"] = _frame_packets
+                    jc[f"{job_id}_analysis"] = _live_analysis_buf
                     vl.commit()
-                    _local_analysis_buf.clear()
             except Exception as _drain_e:
                 logger.warning(f"[LIVE] Final drain failed: {_drain_e}")
         _live_executor.shutdown(wait=False)
@@ -564,15 +757,23 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
         ts = lambda vals: [{"time": float(i * prod_time / len(vals)), "value": float(v)} for i, v in enumerate(vals)]
         
         def save_plot(df, x, y, title, filename, label=None):
-            plt.figure()
+            plt.figure(figsize=(8, 6))
             if label:
                 for col in label:
-                    plt.plot(df[x], df[col], label=col)
-                plt.legend()
+                    plt.plot(df[x], df[col], label=col, linewidth=2)
+                plt.legend(frameon=False)
             else:
-                sns.lineplot(data=df, x=x, y=y)
-            plt.xlabel(x); plt.ylabel(y); plt.title(title)
-            plt.savefig(filename, dpi=200); plt.close()
+                sns.lineplot(data=df, x=x, y=y, linewidth=2)
+            plt.xlabel(x, fontsize=14, fontweight='bold')
+            plt.ylabel(y, fontsize=14, fontweight='bold')
+            plt.title(title, fontsize=16, fontweight='bold')
+            plt.xticks(fontsize=12)
+            plt.yticks(fontsize=12)
+            sns.despine()
+            plt.tight_layout()
+            plt.savefig(filename, dpi=200)
+            plt.savefig(filename.replace('.png', '_hq.png'), dpi=600, bbox_inches='tight')
+            plt.close()
 
 
         # Save a viewer-optimized unwrapped trajectory before running parallel analysis
@@ -599,17 +800,17 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
         with multiprocessing.Pool(processes=4) as pool:
             futures = [
                 pool.apply_async(run_rmsd, ("complex.pdb", viewer_xtc, prod_time)),
+                pool.apply_async(run_ligand_rmsd, ("complex.pdb", viewer_xtc, prod_time)),
                 pool.apply_async(run_rmsf, ("complex.pdb", viewer_xtc, prod_time)),
                 pool.apply_async(run_rg, ("complex.pdb", viewer_xtc, prod_time)),
-                pool.apply_async(run_sasa, ("complex.pdb", viewer_xtc, prod_time)),
                 pool.apply_async(run_dssp, ("complex.pdb", viewer_xtc, prod_time))
             ]
             
             PLOT_CFG = {
                 "rmsd":             ("Time", "RMSD (Å)",                "RMSD",                "rmsd.png",  "rmsd.csv",  None),
+                "ligandRmsd":      ("Time", "Ligand RMSD (Å)",         "Ligand RMSD",         "ligand_rmsd.png", "ligand_rmsd.csv", None),
                 "rmsf":             ("Residue", "RMSF (Å)",            "RMSF",                "rmsf.png",  "rmsf.csv",  None),
                 "radiusOfGyration": ("Time", "Radius of gyration (Å)", "Radius of gyration",  "rg.png",    "rg.csv",         None),
-                "sasa":             ("Time", "Total SASA (Å^2)",      "Total SASA",          "sasa.png",  "sasa.csv",  None),
                 "dssp":             ("Time", "Secondary Structure Count", "Secondary Structure", "ss.png", "ss.csv", ['Helix','Sheet','Coil']),
             }
 
@@ -640,15 +841,20 @@ def md(job_id,protein_bytes,ligand_bytes,config_json):
                     # Clean up column names by removing whitespace and quotes
                     new_cols = [c.strip().strip('"') for c in df_e.columns]
                     df_e.columns = new_cols
-                    plt.figure()
+                    plt.figure(figsize=(8, 6))
                     for col in ["Potential Energy (kJ/mole)", "Kinetic Energy (kJ/mole)", "Total Energy (kJ/mole)"]:
                         if col in df_e.columns:
-                            plt.plot(df_e["Time (ps)"].to_numpy(), df_e[col].to_numpy(), label=col.split(" (")[0])
-                    plt.xlabel("Time (ps)")
-                    plt.ylabel("Energy (kJ/mole)")
-                    plt.legend()
-                    plt.title("System Energy")
+                            plt.plot(df_e["Time (ps)"].to_numpy(), df_e[col].to_numpy(), label=col.split(" (")[0], linewidth=2)
+                    plt.xlabel("Time (ps)", fontsize=14, fontweight='bold')
+                    plt.ylabel("Energy (kJ/mole)", fontsize=14, fontweight='bold')
+                    plt.legend(frameon=False)
+                    plt.title("System Energy", fontsize=16, fontweight='bold')
+                    plt.xticks(fontsize=12)
+                    plt.yticks(fontsize=12)
+                    sns.despine()
+                    plt.tight_layout()
                     plt.savefig("energy.png", dpi=200)
+                    plt.savefig("energy_hq.png", dpi=600, bbox_inches='tight')
                     plt.close()
                 except Exception as p_e:
                     logger.warning(f"Failed to generate energy.png: {p_e}")
@@ -817,108 +1023,153 @@ Upload a JSON file with the following structure:
     @api.websocket("/ws/jobs/{job_id}/stream")
     async def ws_job_stream(websocket: WebSocket, job_id: str):
         await websocket.accept()
-        
-        async def handle_commands():
-            try:
-                while True:
-                    data = await websocket.receive_json()
-                    action = data.get("action")
-                    if not await jc.contains.aio(job_id): continue
-                    state = await jc.get.aio(job_id)
-                    if action == "pause":
-                        state["paused"] = True
-                        await jc.put.aio(job_id, state)
-                    elif action == "resume":
-                        state["paused"] = False
-                        await jc.put.aio(job_id, state)
-                    elif action == "cancel":
-                        state["cancelled"] = True
-                        await jc.put.aio(job_id, state)
-            except: pass
-
-        cmd_task = asyncio.create_task(handle_commands())
+        import mdtraj as md
+        import numpy as np
         log_path = f"/data/{job_id}/simulation.log"
+
+        async def send_init(slot_count_hint):
+            topology_path = f"/data/{job_id}/live_topology.pdb"
+            if not os.path.exists(topology_path):
+                topology_path = f"/data/{job_id}/complex.pdb"
+            if not os.path.exists(topology_path):
+                return
+            with open(topology_path, "rb") as fh:
+                pdb_bytes = fh.read()
+            atom_count = len(coords_from_pdb_bytes(pdb_bytes)) // 3
+            residue_count = 0
+            try:
+                residue_count = len(md.load(topology_path).topology.select("protein and name CA"))
+            except Exception:
+                residue_count = 0
+            await websocket.send_bytes(init_packet(pdb_bytes, atom_count, slot_count_hint, residue_count))
+
+        def parse_csv(filename):
+            path = f"/data/{job_id}/{filename}"
+            if not os.path.exists(path):
+                return []
+            with open(path, "r", errors="replace") as fh:
+                lines = [line.strip() for line in fh.readlines() if line.strip()]
+            if len(lines) < 2:
+                return []
+            header = [h.strip().strip('"').lstrip("#") for h in lines[0].split(",")]
+            rows = []
+            for line in lines[1:]:
+                if line.startswith("#"):
+                    continue
+                values = [value.strip().strip('"') for value in line.split(",")]
+                rows.append({header[idx]: values[idx] if idx < len(values) else "" for idx in range(len(header))})
+            return rows
+
+        async def stream_replay():
+            await vl.reload.aio()
+            viewer_xtc_path = f"/data/{job_id}/viewer.xtc"
+            base_xtc_path = f"/data/{job_id}/prod.xtc"
+            xtc_path = viewer_xtc_path if os.path.exists(viewer_xtc_path) else base_xtc_path
+            pdb_path = f"/data/{job_id}/complex.pdb"
+            if not os.path.exists(xtc_path) or not os.path.exists(pdb_path):
+                return
+            total_frames = 0
+            key = f"{job_id}_frame_count"
+            if await jc.contains.aio(key):
+                total_frames = await jc.get.aio(key)
+            else:
+                with md.formats.XTCTrajectoryFile(xtc_path) as xtc_file:
+                    total_frames = len(xtc_file)
+            sample_indices = sample_frame_indices(total_frames)
+            await send_init(len(sample_indices))
+            rmsd_rows = parse_csv("rmsd.csv")
+            ligand_rows = parse_csv("ligand_rmsd.csv")
+            rg_rows = parse_csv("rg.csv")
+            energy_rows = parse_csv("energy.csv")
+            rmsf_rows = parse_csv("rmsf.csv")
+            rmsf_vals = [float(row.get("RMSF", row.get("value", "0")) or 0) for row in rmsf_rows]
+            for slot_index, source_frame in enumerate(sample_indices):
+                frame = md.load_frame(xtc_path, top=pdb_path, index=source_frame)
+                coords = (frame.xyz[0] * 10.0).astype(np.float32)
+                dssp_frame = md.compute_dssp(frame)[0]
+                scalars = {
+                    "frame": float(slot_index),
+                    "backbone_rmsd": float(rmsd_rows[source_frame].get("RMSD", rmsd_rows[source_frame].get("value", 0)) if source_frame < len(rmsd_rows) else 0),
+                    "ligand_rmsd": float(ligand_rows[source_frame].get("Ligand RMSD", ligand_rows[source_frame].get("value", 0)) if source_frame < len(ligand_rows) else 0),
+                    "radius_of_gyration": float(rg_rows[source_frame].get("Radius of gyration", rg_rows[source_frame].get("value", 0)) if source_frame < len(rg_rows) else 0),
+                    "helix": float((dssp_frame == "H").sum()),
+                    "sheet": float((dssp_frame == "E").sum()),
+                    "coil": float((dssp_frame == "C").sum()),
+                }
+                if source_frame < len(energy_rows):
+                    energy_row = energy_rows[source_frame]
+                    scalars["potential_energy"] = float(energy_row.get("Potential Energy (kJ/mole)", energy_row.get("potential", 0)) or 0)
+                    scalars["kinetic_energy"] = float(energy_row.get("Kinetic Energy (kJ/mole)", energy_row.get("kinetic", 0)) or 0)
+                    scalars["total_energy"] = float(energy_row.get("Total Energy (kJ/mole)", energy_row.get("total", 0)) or 0)
+                time_ns = float(source_frame * 0.01)
+                await websocket.send_bytes(frame_packet(
+                    slot_index=slot_index,
+                    source_frame=source_frame,
+                    time_ns=time_ns,
+                    progress=100.0,
+                    coords_angstrom=coords,
+                    rmsf_vals=rmsf_vals,
+                    dssp_vals=dssp_codes(dssp_frame),
+                    scalars=scalars,
+                ))
+            await websocket.send_bytes(build_packet(PACKET_END, {"status": "completed"}))
+
         try:
             sent_log_lines = 0
-            sent_analysis_idx = 0
-            sent_frame_n = -1
+            sent_stream_idx = 0
+            sent_init = False
 
             while True:
                 try:
                     await vl.reload.aio()
 
-                    # Status
                     if await jc.contains.aio(job_id):
                         state = await jc.get.aio(job_id)
-                        await websocket.send_json({"type": "status", "data": state})
+                        await websocket.send_bytes(status_packet(state))
+                        slot_count_hint = state.get("stream_slot_count", 0)
+                        if not slot_count_hint and await jc.contains.aio(f"{job_id}_stream_slot_count"):
+                            slot_count_hint = await jc.get.aio(f"{job_id}_stream_slot_count")
+                        if not sent_init and slot_count_hint:
+                            await send_init(slot_count_hint)
+                            sent_init = True
                         if state.get("status") in ("completed", "failed", "canceled", "cancelled"):
-                            # Flush any remaining logs before closing
                             if os.path.exists(log_path):
                                 with open(log_path, "r", errors="replace") as f:
                                     lines = f.readlines()
                                 if len(lines) > sent_log_lines:
-                                    await websocket.send_json({
-                                        "type": "logs",
-                                        "lines": [l.rstrip() for l in lines[sent_log_lines:]],
-                                        "start_line": sent_log_lines
-                                    })
+                                    await websocket.send_bytes(logs_packet("".join(lines[sent_log_lines:]), sent_log_lines))
+                            if state.get("status") == "completed":
+                                await stream_replay()
+                            else:
+                                await websocket.send_bytes(build_packet(PACKET_END, {"status": state.get("status")}))
                             break
                     else:
-                        await websocket.send_json({"type": "status", "data": {"status": "not_found"}})
+                        await websocket.send_bytes(status_packet({"status": "not_found"}))
                         break
 
-                    # Logs
                     if os.path.exists(log_path):
                         with open(log_path, "r", errors="replace") as f:
                             lines = f.readlines()
                         if len(lines) > sent_log_lines:
-                            new_lines = lines[sent_log_lines:]
-                            await websocket.send_json({
-                                "type": "logs",
-                                "lines": [l.rstrip() for l in new_lines],
-                                "start_line": sent_log_lines
-                            })
+                            await websocket.send_bytes(logs_packet("".join(lines[sent_log_lines:]), sent_log_lines))
                             sent_log_lines = len(lines)
 
-                    # Trajectory frame (read PDB from volume, send as base64)
-                    frame_key = f"{job_id}_frame"
+                    frame_key = f"{job_id}_stream_frames"
                     if await jc.contains.aio(frame_key):
-                        frame_info = await jc.get.aio(frame_key)
-                        if frame_info:
-                            frame_n = frame_info.get("frame_n", -1)
-                            if frame_n > sent_frame_n:
-                                frame_file = f"/data/{job_id}/{frame_info['file']}"
-                                if os.path.exists(frame_file):
-                                    with open(frame_file, "rb") as fh:
-                                        pdb_bytes = fh.read()
-                                    pdb_b64 = base64.b64encode(pdb_bytes).decode("ascii")
-                                    await websocket.send_json({
-                                        "type": "trajectory",
-                                        "frame": frame_n,
-                                        "step": frame_info.get("step", 0),
-                                        "time_ns": frame_info.get("time_ns", 0),
-                                        "pdb_b64": pdb_b64
-                                    })
-                                    sent_frame_n = frame_n
-
-                    # Analysis points
-                    analysis_key = f"{job_id}_analysis"
-                    if await jc.contains.aio(analysis_key):
-                        all_points = await jc.get.aio(analysis_key)
-                        if all_points and len(all_points) > sent_analysis_idx:
-                            new_points = all_points[sent_analysis_idx:]
-                            await websocket.send_json({
-                                "type": "analysis",
-                                "points": new_points,
-                                "start_index": sent_analysis_idx
-                            })
-                            sent_analysis_idx = len(all_points)
+                        frame_packets = await jc.get.aio(frame_key)
+                        if frame_packets and len(frame_packets) > sent_stream_idx:
+                            for packet_info in frame_packets[sent_stream_idx:]:
+                                packet_path = f"/data/{job_id}/{packet_info['packet_file']}"
+                                if os.path.exists(packet_path):
+                                    with open(packet_path, "rb") as packet_fh:
+                                        await websocket.send_bytes(packet_fh.read())
+                            sent_stream_idx = len(frame_packets)
 
                 except WebSocketDisconnect:
                     return
                 except Exception as e:
                     try:
-                        await websocket.send_json({"type": "error", "message": str(e)})
+                        await websocket.send_bytes(error_packet(str(e)))
                     except Exception:
                         return
 
@@ -926,7 +1177,6 @@ Upload a JSON file with the following structure:
         except WebSocketDisconnect:
             pass
         finally:
-            cmd_task.cancel()
             try:
                 await websocket.close()
             except Exception:

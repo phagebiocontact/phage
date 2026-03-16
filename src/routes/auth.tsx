@@ -82,7 +82,7 @@ function Auth() {
 					<div className="space-y-8">
 						<h2 className="text-4xl xl:text-5xl font-bold leading-tight">
 							Accelerate Your{" "}
-							<span className="text-gradient">Molecular Discovery</span>
+							<span className="glass-pill">Molecular Discovery</span>
 						</h2>
 						<p className="text-muted-foreground text-xl leading-relaxed max-w-md">
 							Join researchers using Phage to power their
@@ -120,7 +120,7 @@ function Auth() {
 							<div className="w-10 h-10 rounded-xl bg-gradient-primary flex items-center justify-center shadow-lg">
 								<Dna className="h-6 w-6 text-white" />
 							</div>
-							<span className="text-gradient font-bold text-xl">Phage</span>
+							<span className="glass-pill font-bold text-xl">Phage</span>
 						</NavLink>
 					</div>
 					{/* Header */}
