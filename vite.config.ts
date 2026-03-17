@@ -1,20 +1,18 @@
-//import netlify from "@netlify/vite-plugin-tanstack-start";
 import tailwindcss from "@tailwindcss/vite";
 import { devtools } from "@tanstack/devtools-vite";
-import { tanstackStart } from "@tanstack/react-start/plugin/vite";
+import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import viteImagemin from "vite-plugin-imagemin";
-//import basicSsl from "@vitejs/plugin-basic-ssl";
-import {nitro} from "nitro/vite";
 
 const config = defineConfig({
 	plugins: [
-		//basicSsl(),
+		TanStackRouterVite({
+			routesDirectory: "./src/routes",
+			generatedRouteTree: "./src/routeTree.gen.ts",
+		}),
 		devtools(),
 		tailwindcss(),
-		tanstackStart(),
-		nitro(),
 		viteReact({
 			babel: {
 				plugins: ["babel-plugin-react-compiler"],

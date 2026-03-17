@@ -1,11 +1,9 @@
 [build]
-  command = "bun run build"
-  publish = "dist/client"
-
-[functions]
-  directory = "dist/server"
+  command = "bunx convex deploy --cmd 'bun run build'"
+  publish = "dist"
 
 [[redirects]]
   from = "/*"
-  to = ".netlify/v1/functions"
+  to = "/index.html"
   status = 200
+  
