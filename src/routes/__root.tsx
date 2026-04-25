@@ -1,6 +1,5 @@
 import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import type { ConvexQueryClient } from "@convex-dev/react-query";
-import { TanStackDevtools } from "@tanstack/react-devtools";
 import type { QueryClient } from "@tanstack/react-query";
 import {
 	createRootRouteWithContext,
@@ -9,7 +8,6 @@ import {
 	Scripts,
 	useRouteContext,
 } from "@tanstack/react-router";
-import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { createServerFn } from "@tanstack/react-start";
 import Lenis from "lenis";
 import { useEffect } from "react";
@@ -21,7 +19,6 @@ import SecurityInit from "../components/SecurityInit";
 import { ThemeProvider } from "../components/themeprovider";
 import { Toaster } from "../components/ui/toaster";
 import { TooltipProvider } from "../components/ui/tooltip";
-import TanStackQueryDevtools from "../integrations/tanstack-query/devtools";
 import { AuthProvider } from "../lib/auth";
 import { getToken } from "../lib/auth-server";
 import appCss from "../styles.css?url";
@@ -114,18 +111,6 @@ function RootComponent() {
 						<Footer />
 						<Toaster />
 						<Sonner />
-						<TanStackDevtools
-							config={{
-								position: "bottom-right",
-							}}
-							plugins={[
-								{
-									name: "Tanstack Router",
-									render: <TanStackRouterDevtoolsPanel />,
-								},
-								TanStackQueryDevtools,
-							]}
-						/>
 					</TooltipProvider>
 				</ThemeProvider>
 			</AuthProvider>
